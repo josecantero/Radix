@@ -31,6 +31,8 @@ add_executable(radix_core
     ${SOURCE_DIR}/randomx_util.cpp
     ${SOURCE_DIR}/block.cpp
     ${SOURCE_DIR}/blockchain.cpp
+    ${SOURCE_DIR}/transaction.cpp
+    ${SOURCE_DIR}/merkle_tree.cpp 
 )
 
 # Enlazar la librería RandomX al ejecutable

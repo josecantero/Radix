@@ -5,7 +5,10 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <memory> // Para std::unique_ptr
 #include "randomx_util.h" // Para RandomXHash
+#include "transaction.h"
+#include "merkle_tree.h"
 
 namespace Radix {
 
@@ -19,11 +22,13 @@ struct BlockHeader {
     uint32_t difficultyTarget; // Objetivo de dificultad
     uint32_t nonce;          // Nonce para la prueba de trabajo
 
+    BlockHeader();
+
     // Constructor por defecto
-    BlockHeader() : version(1), timestamp(0), difficultyTarget(0), nonce(0) {
+    /*BlockHeader() : version(1), timestamp(0), difficultyTarget(0), nonce(0) {
         prevBlockHash.fill(0);
         merkleRoot.fill(0);
-    }
+    }*/
 
     // Serializa la cabecera del bloque a un vector de bytes para hashing
     std::vector<uint8_t> serialize() const;
@@ -33,12 +38,19 @@ struct BlockHeader {
 class Block {
 public:
     BlockHeader header;
-    // std::vector<Transaction> transactions; // Esto vendrá en etapas posteriores
+    std::vector<std::unique_ptr<Transaction>> transactions;
 
     Block(); // Constructor por defecto
 
     // Calcula el hash del bloque usando RandomX
     RandomXHash calculateHash(RandomXContext& rxContext) const;
+
+    // Añade una transacción al bloque
+    void addTransaction(std::unique_ptr<Transaction> tx);
+
+    // Actualiza la raíz Merkle del bloque basándose en las transacciones actuales
+    void updateMerkleRoot(RandomXContext& rxContext);
+
 
     // Para representar el bloque de forma legible
     std::string toString() const;
