@@ -1,64 +1,62 @@
 #include "randomx_util.h"
 #include <iostream>
-#include <iomanip>
-#include <sstream>
-#include <algorithm> // Para std::min
+#include <iomanip> // Para std::setw, std::setfill
+#include <sstream> // Para std::stringstream
+#include <vector> // Asegúrate de que está incluido para std::vector
+#include <stdexcept> // Para std::runtime_error
 
 namespace Radix {
 
-RandomXContext::RandomXContext() : cache(nullptr), vm(nullptr), initialized(false) {}
+RandomXContext::RandomXContext() : cache(nullptr), vm(nullptr) {
+    // Generar una semilla fija o predeterminada para la inicialización del cache.
+    // En una implementación real de una blockchain, esta semilla (o una semilla
+    // derivada de datos del bloque anterior/cadena) podría ser más compleja.
+    std::string seed_str = "RadixBlockchainSeed12345ForPoW"; // Una semilla de ejemplo
+    std::vector<uint8_t> seed(seed_str.begin(), seed_str.end());
 
-RandomXContext::~RandomXContext() {
-    if (vm) {
-        randomx_destroy_vm(vm);
-    }
-    if (cache) {
-        randomx_release_cache(cache);
-    }
-}
-
-void RandomXContext::initialize(const std::vector<uint8_t>& seed) {
-    if (initialized) {
-        // Liberar recursos existentes si ya fue inicializado con otra semilla
-        if (vm) randomx_destroy_vm(vm);
-        if (cache) randomx_release_cache(cache);
-        vm = nullptr;
-        cache = nullptr;
-        initialized = false;
-    }
-
-    randomx_flags flags = RANDOMX_FLAG_DEFAULT; // RANDOMX_FLAG_JIT | RANDOMX_FLAG_HARD_AES;
-
-    // Asignar y inicializar el caché
-    cache = randomx_alloc_cache(flags);
+    // Crear el cache RandomX (puede tardar un poco y usar bastante RAM)
+    // RANDOMX_FLAG_DEFAULT incluye flags como JIT e HASH_ALG
+    cache = randomx_alloc_cache(RANDOMX_FLAG_DEFAULT);
     if (!cache) {
-        throw std::runtime_error("Error: No se pudo asignar RandomX cache.");
+        // En un programa real, esto debería manejar el error de forma más elegante
+        // (lanzar una excepción, registrar el error, etc.)
+        std::cerr << "Error: No se pudo asignar el cache RandomX. Posiblemente falta de RAM." << std::endl;
+        throw std::runtime_error("Failed to allocate RandomX cache.");
     }
     randomx_init_cache(cache, seed.data(), seed.size());
 
-    // Asignar y inicializar la VM
-    vm = randomx_create_vm(flags, cache, nullptr); // Dataset no es necesario para PoW simple
+    // Crear la máquina virtual RandomX
+    // El último argumento (dataset) es NULL porque el dataset se crea a partir del cache.
+    vm = randomx_create_vm(RANDOMX_FLAG_DEFAULT, cache, NULL);
     if (!vm) {
-        randomx_release_cache(cache); // Limpiar si la VM falla
-        throw std::runtime_error("Error: No se pudo asignar RandomX VM.");
+        // Liberar el cache si la VM falla para evitar fugas de memoria.
+        randomx_release_cache(cache);
+        std::cerr << "Error: No se pudo crear la VM RandomX." << std::endl;
+        throw std::runtime_error("Failed to create RandomX VM.");
     }
-    initialized = true;
 }
 
-RandomXHash RandomXContext::calculateHash(const std::vector<uint8_t>& data, const std::vector<uint8_t>& seed) {
-    // Re-inicializar si la semilla ha cambiado (comportamiento simplificado)
-    // En un blockchain real, la semilla de RandomX se deriva del bloque anterior
-    // o un mecanismo más sofisticado para evitar recalcular cache/VM constantemente.
-    // Para esta etapa, si la semilla es diferente, reinicializamos.
-    // Una implementación más robusta usaría un mecanismo para cambiar la semilla sin re-crear cache/VM
-    // si la "semilla real" (como el hash del bloque anterior) no cambia drásticamente.
-    initialize(seed); // Reinicializa con la nueva semilla si es necesario
-
-    RandomXHash hash;
-    randomx_calculate_hash(vm, data.data(), data.size(), hash.data());
-    return hash;
+RandomXContext::~RandomXContext() {
+    // Asegurarse de liberar la VM y el cache para evitar fugas de memoria.
+    if (vm) {
+        randomx_destroy_vm(vm);
+        vm = nullptr;
+    }
+    if (cache) {
+        randomx_release_cache(cache);
+        cache = nullptr;
+    }
 }
 
+// Implementación de calculateHash que solo toma los datos de entrada
+RandomXHash RandomXContext::calculateHash(const std::vector<uint8_t>& data) {
+    RandomXHash hash_array;
+    // randomx_calculate_hash toma (randomx_vm* vm, const void* input, size_t input_size, void* output)
+    randomx_calculate_hash(vm, data.data(), data.size(), hash_array.data());
+    return hash_array;
+}
+
+// Función de utilidad para convertir un hash a string hexadecimal
 std::string toHexString(const RandomXHash& hash) {
     std::stringstream ss;
     ss << std::hex << std::setfill('0');
@@ -66,22 +64,6 @@ std::string toHexString(const RandomXHash& hash) {
         ss << std::setw(2) << static_cast<int>(b);
     }
     return ss.str();
-}
-
-RandomXHash fromHexString(const std::string& hexString) {
-    RandomXHash hash;
-    if (hexString.length() != RANDOMX_HASH_SIZE * 2) {
-        // Podrías lanzar una excepción o manejar el error
-        std::cerr << "Advertencia: Longitud de cadena hexadecimal incorrecta para RandomXHash." << std::endl;
-        std::fill(hash.begin(), hash.end(), 0); // Rellenar con ceros
-        return hash;
-    }
-
-    for (size_t i = 0; i < RANDOMX_HASH_SIZE; ++i) {
-        std::string byteString = hexString.substr(i * 2, 2);
-        hash[i] = static_cast<uint8_t>(std::stoul(byteString, nullptr, 16));
-    }
-    return hash;
 }
 
 } // namespace Radix

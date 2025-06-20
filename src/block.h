@@ -2,57 +2,48 @@
 #define BLOCK_H
 
 #include <cstdint>
-#include <string>
 #include <vector>
+#include <string>
 #include <array>
 #include <memory> // Para std::unique_ptr
+
+#include "transaction.h" // Incluir Transaction para usarlo en el vector
 #include "randomx_util.h" // Para RandomXHash
-#include "transaction.h"
-#include "merkle_tree.h"
 
 namespace Radix {
 
-// Estructura de la cabecera de un bloque de Radix (RDX)
-// Similar a la de Bitcoin, pero adaptada.
 struct BlockHeader {
-    int32_t version;         // Versión del bloque
-    RandomXHash prevBlockHash; // Hash del bloque anterior (semilla para RandomX)
-    RandomXHash merkleRoot;    // Hash de la raíz Merkle de las transacciones (placeholder por ahora)
-    uint32_t timestamp;      // Marca de tiempo del bloque
-    uint32_t difficultyTarget; // Objetivo de dificultad
-    uint32_t nonce;          // Nonce para la prueba de trabajo
-
-    BlockHeader();
-
-    // Constructor por defecto
-    /*BlockHeader() : version(1), timestamp(0), difficultyTarget(0), nonce(0) {
-        prevBlockHash.fill(0);
-        merkleRoot.fill(0);
-    }*/
-
-    // Serializa la cabecera del bloque a un vector de bytes para hashing
-    std::vector<uint8_t> serialize() const;
+    uint32_t version;
+    RandomXHash prevBlockHash;
+    RandomXHash merkleRoot;
+    uint32_t timestamp;
+    uint32_t difficultyTarget;
+    uint64_t nonce;
+    RandomXHash blockHash; // ¡NUEVO CAMPO: El hash de este propio bloque!
 };
 
-// Estructura de un bloque completo (por ahora, solo cabecera)
 class Block {
 public:
     BlockHeader header;
     std::vector<std::unique_ptr<Transaction>> transactions;
 
-    Block(); // Constructor por defecto
+    // Constructor que toma el vector de transacciones por rvalue reference (std::move)
+    Block(uint32_t version, const RandomXHash& prevHash, uint32_t timestamp,
+          uint32_t difficultyTarget, std::vector<std::unique_ptr<Transaction>>&& txs); // Fíjate en '&& txs'
 
-    // Calcula el hash del bloque usando RandomX
+    // Constructor por defecto (quizás no sea necesario si siempre usamos el otro)
+    Block();
+
+    // --- ¡DESHABILITAR CONSTRUCTOR DE COPIA Y ASIGNACIÓN DE COPIA! ---
+    Block(const Block&) = delete; // Elimina el constructor de copia
+    Block& operator=(const Block&) = delete; // Elimina el operador de asignación de copia
+    // ------------------------------------------------------------------
+
+    // Constructor de movimiento y operador de asignación de movimiento (implícitamente generados por unique_ptr o definidos si hay recursos propios)
+    // std::unique_ptr ya maneja el movimiento correctamente.
+
+    void updateMerkleRoot(RandomXContext& rxContext); // Asegura que las transacciones tienen sus TxIds calculados
     RandomXHash calculateHash(RandomXContext& rxContext) const;
-
-    // Añade una transacción al bloque
-    void addTransaction(std::unique_ptr<Transaction> tx);
-
-    // Actualiza la raíz Merkle del bloque basándose en las transacciones actuales
-    void updateMerkleRoot(RandomXContext& rxContext);
-
-
-    // Para representar el bloque de forma legible
     std::string toString() const;
 };
 

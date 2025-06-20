@@ -1,41 +1,36 @@
-#ifndef RANDOMX_UTIL_H
-#define RANDOMX_UTIL_H
+#ifndef RANDOM_X_UTIL_H
+#define RANDOM_X_UTIL_H
 
-#include <string>
+#include <randomx.h>
 #include <vector>
+#include <string>
 #include <array>
-#include <randomx.h> // Necesario para los tipos de RandomX
+#include <cstdint> // Para uint8_t
 
 namespace Radix {
 
-// Representación de un hash RandomX (32 bytes)
-using RandomXHash = std::array<uint8_t, RANDOMX_HASH_SIZE>;
+// Definición de RandomXHash como un array de 32 bytes
+using RandomXHash = std::array<uint8_t, 32>;
+using Address = std::string; // Definición de Address para direcciones de billetera
 
-// Clase que maneja la inicialización y uso de RandomX VM y cache
+// Clase para gestionar el contexto RandomX
 class RandomXContext {
 public:
     RandomXContext();
     ~RandomXContext();
 
-    // Calcula el hash RandomX de los datos de entrada
-    // La semilla de RandomX generalmente es el hash del bloque anterior o un valor similar
-    RandomXHash calculateHash(const std::vector<uint8_t>& data, const std::vector<uint8_t>& seed);
+    // Calcula un hash RandomX de los datos proporcionados.
+    // Esta versión ahora solo toma los datos a hashear.
+    RandomXHash calculateHash(const std::vector<uint8_t>& data);
 
 private:
-    randomx_cache *cache;
-    randomx_vm *vm;
-    bool initialized;
-
-    // Inicializa RandomX con una semilla (que en un blockchain real, cambia con el tiempo)
-    void initialize(const std::vector<uint8_t>& seed);
+    randomx_cache* cache;
+    randomx_vm* vm;
 };
 
-// Convierte un RandomXHash a una cadena hexadecimal
+// Función de utilidad para convertir un hash RandomX (std::array<uint8_t, 32>) a una string hexadecimal
 std::string toHexString(const RandomXHash& hash);
-
-// Convierte una cadena hexadecimal a RandomXHash
-RandomXHash fromHexString(const std::string& hexString);
 
 } // namespace Radix
 
-#endif // RANDOMX_UTIL_H
+#endif // RANDOM_X_UTIL_H

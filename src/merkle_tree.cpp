@@ -1,66 +1,72 @@
 #include "merkle_tree.h"
-#include <algorithm> // Para std::vector::insert y otras utilidades
-#include <stdexcept>
+#include <iostream>
+#include <algorithm> // Para std::copy
+#include <stdexcept> // Para std::runtime_error
 
 namespace Radix {
 
-MerkleTree::MerkleTree(const std::vector<RandomXHash>& transactionHashes, RandomXContext& rxContext)
-    : leaves(transactionHashes) {
-
-    if (leaves.empty()) {
-        // En Bitcoin, un bloque sin transacciones no es válido.
-        // Pero para el génesis o bloques con solo coinbase, se requiere un hash.
-        // La raíz Merkle de un bloque génesis (o sin txs) puede ser el hash del coinbase.
-        // Si no hay transacciones en absoluto, puede ser un hash de ceros.
-        merkleRoot.fill(0); // Raíz Merkle nula si no hay transacciones.
-        return;
+MerkleTree::MerkleTree(const std::vector<RandomXHash>& leafHashes) {
+    if (leafHashes.empty()) {
+        throw std::runtime_error("Merkle tree cannot be built from empty leaf hashes.");
     }
+    leaves = leafHashes;
+    buildTree();
+}
 
-    // Si solo hay una transacción (ej. solo coinbase), su hash es la raíz Merkle
-    if (leaves.size() == 1) {
-        merkleRoot = leaves[0];
+void MerkleTree::buildTree() {
+    if (leaves.empty()) {
+        rootHash.fill(0); // O manejar como error, dependiendo de la lógica deseada para árboles vacíos
         return;
     }
 
     std::vector<RandomXHash> currentLevel = leaves;
 
-    // Construir el árbol de abajo hacia arriba
+    // Si solo hay una hoja, esa es la raíz
+    if (currentLevel.size() == 1) {
+        rootHash = currentLevel[0];
+        return;
+    }
+
+    RandomXContext rxContext; // Crear un contexto RandomX para los cálculos
+
+    // Construir los niveles del árbol hasta llegar a la raíz
     while (currentLevel.size() > 1) {
         std::vector<RandomXHash> nextLevel;
-        for (size_t i = 0; i < currentLevel.size(); i += 2) {
-            RandomXHash h1 = currentLevel[i];
-            RandomXHash h2;
+        // Si hay un número impar de hashes, duplicar el último
+        if (currentLevel.size() % 2 != 0) {
+            currentLevel.push_back(currentLevel.back());
+        }
 
-            // Si hay un número impar de hashes, el último se duplica (como en Bitcoin)
-            if (i + 1 < currentLevel.size()) {
-                h2 = currentLevel[i+1];
-            } else {
-                h2 = h1; // Duplicar el último hash
-            }
-            nextLevel.push_back(hashPair(h1, h2, rxContext));
+        for (size_t i = 0; i < currentLevel.size(); i += 2) {
+            RandomXHash combinedHash = hashPair(currentLevel[i], currentLevel[i+1], rxContext);
+            nextLevel.push_back(combinedHash);
         }
         currentLevel = nextLevel;
     }
-
-    merkleRoot = currentLevel[0];
+    rootHash = currentLevel[0];
 }
 
-RandomXHash MerkleTree::getMerkleRoot() const {
-    return merkleRoot;
-}
-
-RandomXHash MerkleTree::hashPair(const RandomXHash& h1, const RandomXHash& h2, RandomXContext& rxContext) {
-    // Concatenar los dos hashes
+RandomXHash MerkleTree::hashPair(const RandomXHash& hash1, const RandomXHash& hash2, RandomXContext& rxContext) {
     std::vector<uint8_t> combinedHashes;
-    combinedHashes.reserve(h1.size() + h2.size());
-    combinedHashes.insert(combinedHashes.end(), h1.begin(), h1.end());
-    combinedHashes.insert(combinedHashes.end(), h2.begin(), h2.end());
+    // Concatenar los dos hashes
+    combinedHashes.insert(combinedHashes.end(), hash1.begin(), hash1.end());
+    combinedHashes.insert(combinedHashes.end(), hash2.begin(), hash2.end());
 
-    // NOTA: Similar a Transaction::calculateHash, aquí también se usaría SHA256
-    // en una implementación real para el hashing del Merkle Tree.
-    // Usamos RandomXContext para simular el hashing por ahora.
-    std::vector<uint8_t> seed_for_merkle_hash(RANDOMX_HASH_SIZE, 0); // Semilla fija
-    return rxContext.calculateHash(combinedHashes, seed_for_merkle_hash);
+    // NOTA: ELIMINAR EL SEGUNDO ARGUMENTO (seed_for_merkle_hash)
+    // RandomXContext::calculateHash solo espera los datos a hashear.
+    return rxContext.calculateHash(combinedHashes); // ¡CORREGIDO! Solo un argumento
+}
+
+RandomXHash MerkleTree::getRootHash() const {
+    return rootHash;
+}
+
+// Puedes añadir una función de validación aquí si lo deseas
+bool MerkleTree::validateTree() const {
+    // Esto implicaría reconstruir el árbol y comparar el hash raíz,
+    // o verificar los hashes de los nodos intermedios si se almacenaran.
+    // Por ahora, asumimos que si se construye, es válido.
+    return true;
 }
 
 } // namespace Radix

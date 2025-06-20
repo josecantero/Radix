@@ -1,345 +1,248 @@
 #include "blockchain.h"
+#include "block.h"
+#include "transaction.h"
+#include "randomx_util.h" // Para toHexString
 #include <iostream>
-#include <limits> // Para numeric_limits
-#include <algorithm> // Para std::reverse
-#include <chrono> 
+#include <limits> // Para std::numeric_limits
+// #include <ctime>  // ¡ELIMINADO! Ya no es necesario si std::time se resuelve con <chrono>
+#include <chrono> // Para std::chrono::system_clock::now() y otras funciones de tiempo
+#include <iomanip> // Para std::setw, std::setfill en mensajes de error
 
 namespace Radix {
 
+// Constructor de Blockchain
 Blockchain::Blockchain() {
-    // Definimos un objetivo de dificultad muy alto para el bloque génesis,
-    // que es simplemente un valor fijo.
-    // esto debe ser 0x00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-    // Para simplificar, usaremos un número de 32 bits. Cuanto más pequeño, más difícil.
-    // Un valor muy grande aquí para que el hash sea casi cero.
-    // Target para RandomX es un poco diferente; un hash bajo es bueno.
-    // Así que queremos que los primeros bytes del hash sean cero.
-    // Por ejemplo, 0x0000FFFF para 2 bytes iniciales a cero.
-    // O 0x000000FF para 3 bytes iniciales a cero.
-    // Cuanto más ceros iniciales, más difícil.
-    // Usemos un target que requiera que los primeros 2 bytes del hash sean cero para empezar.
-    //genesisBlockTargetHash.fill(0);
-    // Por ejemplo, para que los primeros 2 bytes sean cero:
-    // genesisBlockTargetHash[0] = 0;
-    // genesisBlockTargetHash[1] = 0;
-    // El objetivo real se compara byte por byte desde el principio del hash.
-    // Si el hash del bloque es menor o igual al objetivo, es válido.
-    // Para un objetivo de dificultad que sea 0x0000FFFF..., necesitamos que los bytes del hash
-    // sean 0x00, 0x00, ...
-    // Un target como 0x00000F... significa que los dos primeros bytes deben ser 0.
-    // Ajustar el objetivo para que sea algo alcanzable para la demo.
-    // Queremos que el hash sea menor que el target.
-    // Un target de 0x00000000FFFFFFFF... significa que los primeros 4 bytes deben ser cero.
-    // Para esta demo, simplemente definiremos el "target" como los 2 primeros bytes del hash que deben ser cero.
-    // Opcionalmente, podemos definir un target numérico:
-    // Por ejemplo, un hash debe ser menor que 2^256 / Dificultad.
-    // La dificultad debe ser inversa a este target.
-    // Para simplificar, nuestro `difficultyTarget` indicará el número de ceros iniciales en el hash.
-    // Para el Génesis, pediremos 1 byte inicial a cero para que sea rápido de minar.
+    // La cadena se inicializará con el bloque Génesis
 }
 
+// Crea el Bloque Génesis
 void Blockchain::createGenesisBlock(RandomXContext& rxContext) {
-    //Block genesisBlock;
-    std::unique_ptr<Block> genesisBlock = std::make_unique<Block>(); 
-    genesisBlock->header.version = 1;
-    genesisBlock->header.prevBlockHash.fill(0); // El hash del bloque anterior es cero para el génesis
-    //genesisBlock.header.merkleRoot.fill(0);   // Placeholder
-    genesisBlock->header.timestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-    genesisBlock->header.difficultyTarget = getCurrentDifficultyTarget(); // Por ejemplo, 0x0000FFFF
+    // Crear la transacción de recompensa para el minero (Coinbase)
+    // Asignamos una dirección de minero de ejemplo por ahora.
+    // La recompensa inicial es un valor arbitrario, ej. 50 Radix = 50,000,000,000 Rads
+    Rads genesisReward = 50000000000ULL; // 50 RDX = 50 * 10^9 Rads
+    Address genesisMinerAddress = "R1mFGenesisMinerAddress"; // Dirección de ejemplo para el minero del Génesis
 
-    // Crear la transacción Coinbase para el bloque Génesis
-    // La recompensa inicial de debe ser 50 RDX. Aquí usamos un valor arbitrario.
-    std::unique_ptr<CoinbaseTransaction> coinbaseTx = createCoinbaseTx(0, "GenesisMinerAddress", rxContext);
-    genesisBlock->addTransaction(std::move(coinbaseTx));
+    // La transacción Coinbase no tiene inputs que gasten fondos, solo crea nuevos.
+    // El campo 'data' puede ser un mensaje arbitrario.
+    CoinbaseTransaction coinbaseTx(genesisReward, genesisMinerAddress, "The Times 03/Jan/2009 Chancellor on brink of second bailout for banks");
 
-    // Actualizar Merkle Root ANTES de calcular el hash del bloque
-    genesisBlock->updateMerkleRoot(rxContext);
+    // Calcular el TxId de la transacción Coinbase
+    coinbaseTx.txId = coinbaseTx.calculateHash(rxContext);
 
-    std::cout << "Minando bloque Génesis..." << std::endl;
-    // Minar el bloque génesis
+    // Crear el bloque Génesis
+    // No tiene Previous Hash (todos ceros)
+    RandomXHash prevHash;
+    prevHash.fill(0);
+
+    // Las transacciones pendientes para el Génesis solo incluyen la Coinbase
+    std::vector<std::unique_ptr<Transaction>> genesisTransactions;
+    genesisTransactions.push_back(std::make_unique<CoinbaseTransaction>(std::move(coinbaseTx))); // Movemos la transacción
+
+    std::cout << "Minando bloque Genesis..." << std::endl;
+    
+    // Obtener el timestamp actual usando chrono
+    uint32_t currentTimestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                                    std::chrono::system_clock::now().time_since_epoch()).count());
+
+    // Crear el bloque Génesis usando el constructor que toma rvalue reference
+    std::unique_ptr<Block> genesisBlock = std::make_unique<Block>(
+        1, // Version
+        prevHash,
+        currentTimestamp, // Timestamp generado con chrono
+        getCurrentDifficultyTarget(),
+        std::move(genesisTransactions) // Mover las transacciones al bloque
+    );
+
+    // Minar el bloque Génesis
+    mineBlockInternal(*genesisBlock, rxContext);
+
+    // Añadir el bloque minado a la cadena
+    chain.push_back(std::move(genesisBlock));
+    std::cout << "Bloque Genesis minado exitosamente con Nonce: " << chain.back()->header.nonce << std::endl;
+}
+
+// Calcula la dificultad actual (ej. un byte inicial de 0)
+uint32_t Blockchain::getCurrentDifficultyTarget() const {
+    // Esto es una dificultad fija para la demo.
+    // En una blockchain real, se ajustaría dinámicamente.
+    return 0x00FFFFFF; // Representa que el primer byte del hash debe ser 0
+}
+
+// Verifica si un hash cumple con la dificultad
+bool Blockchain::checkDifficulty(const RandomXHash& hash, uint32_t target) const {
+    // Para 0x00FFFFFF, solo necesitamos verificar que el primer byte sea 0x00
+    // Esto significa que el hash resultante debe ser menor o igual que 0x00FFFFFF...
+    // Un hash con ceros iniciales cumple la dificultad.
+    return hash[0] == 0x00;
+}
+
+// Función interna para minar un bloque dado
+void Blockchain::mineBlockInternal(Block& block, RandomXContext& rxContext) {
+    block.updateMerkleRoot(rxContext); // Asegurarse de que el Merkle Root esté actualizado
+    block.header.nonce = 0; // Reiniciar el nonce para empezar a minar
+
+    RandomXHash currentHash;
     while (true) {
-        genesisBlock->header.nonce++;
-        Radix::RandomXHash blockHash = genesisBlock->calculateHash(rxContext);
-
-        if (checkDifficulty(blockHash, genesisBlock->header.difficultyTarget)) {
-            std::cout << "Bloque Génesis minado exitosamente con Nonce: " << genesisBlock->header.nonce << std::endl;
-            //genesisBlock.header.prevBlockHash = blockHash; El hash del bloque debe ser su propio identificador
-            // Y no es el prevBlockHash. Aquí lo usamos para la semilla de RandomX del siguiente bloque.
-            // Para el *siguiente* bloque, el prevBlockHash será el hash de este bloque génesis.
-            chain.push_back(std::move(genesisBlock));
-            //chain.push_back(genesisBlock);
-            return;
+        currentHash = block.calculateHash(rxContext);
+        if (checkDifficulty(currentHash, block.header.difficultyTarget)) {
+            block.header.blockHash = currentHash; // Asignar el hash encontrado al bloque
+            break;
         }
-        // Evitar bucle infinito si el target es demasiado difícil o el nonce desborda
-        if (genesisBlock->header.nonce == std::numeric_limits<uint32_t>::max()) {
-            std::cerr << "Advertencia: Nonce desbordado para el bloque Génesis. Incrementando dificultad o ajustando el objetivo." << std::endl;
-            // Reiniciar Nonce y quizás ajustar timestamp o algo para cambiar el hash y seguir buscando.
-            genesisBlock->header.nonce = 0;
-            genesisBlock->header.timestamp++; // Cambiar timestamp para variar el hash
-        }
+        block.header.nonce++;
     }
 }
 
-bool Blockchain::addBlock(std::unique_ptr<Block> newBlock, RandomXContext& rxContext, const std::vector<std::string>& pendingTxData) {
+// Mina un nuevo bloque con transacciones pendientes
+std::unique_ptr<Block> Blockchain::mineNewBlock(Radix::RandomXContext& rxContext,
+                                                  const std::vector<std::string>& pendingTxData) {
     if (chain.empty()) {
-        // El primer bloque debe ser el génesis (manejado por createGenesisBlock)
-        // No debería llegar aquí si el génesis ya se creó.
-        std::cerr << "Error: La cadena está vacía. El primer bloque debe ser el génesis." << std::endl;
-        return false;
+        std::cerr << "Error: No se puede minar un nuevo bloque sin un Bloque Genesis." << std::endl;
+        return nullptr;
     }
 
-    //const Block& lastBlock = *getLastBlock(); 
     const Block& lastBlock = getLastBlock();
-    RandomXHash expectedPrevHash = lastBlock.calculateHash(rxContext);
+    RandomXHash prevHash = lastBlock.header.blockHash; // Usamos el blockHash del bloque anterior
+    
+    // Obtener el timestamp actual usando chrono
+    uint32_t currentTimestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                                    std::chrono::system_clock::now().time_since_epoch()).count());
+    
+    uint32_t difficulty = getCurrentDifficultyTarget();
 
-    // 1. Verificar que el prevBlockHash del nuevo bloque coincida con el hash del último bloque
-    //    En nuestra simulación, prevBlockHash es la semilla para RandomX.
-    //    Si el hash del último bloque no se propaga como `prevBlockHash` del siguiente,
-    //    RandomX tendrá la misma semilla para todos los bloques. Lo correcto es usar el hash
-    //    del bloque anterior como semilla para RandomX del bloque actual.
-    //    Por lo tanto, el prevBlockHash del nuevo bloque debe ser el hash calculado del *último* bloque.
+    // Crear la transacción Coinbase para este nuevo bloque
+    // Recompensa de 10 RDX (10,000,000,000 Rads) para el minero
+    Rads blockReward = 10000000000ULL;
+    Address minerAddress = "R1mFMinerAddressExample"; // Dirección de ejemplo para el minero
+    CoinbaseTransaction coinbaseTx(blockReward, minerAddress, "Coinbase for Block " + std::to_string(chain.size())); // Usamos chain.size() para el número de bloque
 
-    // Calculate the hash of the last block to verify prevBlockHash
-    // This requires a RandomXContext, but we don't have one here directly
-    // This means `addBlock` would need to take a `RandomXContext&` as well,
-    // or the Block itself needs to be able to re-calculate its own hash given a context.
-    // For now, we will simply assume the `prevBlockHash` in `newBlock->header` is correct.
-    // In a real system, you would pass the rxContext here and verify:
-    // RandomXHash lastBlockHash = lastBlock.calculateHash(rxContext_passed_in);
-    // if (newBlock->header.prevBlockHash != lastBlockHash) { ... }
+    // Calcular el TxId de la transacción Coinbase
+    coinbaseTx.txId = coinbaseTx.calculateHash(rxContext);
 
-    // Por ahora, solo comprobaremos que el target de dificultad sea el actual
-    if (newBlock->header.difficultyTarget != getCurrentDifficultyTarget()) {
-        std::cerr << "Error: El objetivo de dificultad del nuevo bloque no coincide." << std::endl;
-        std::cerr << "Esperado: " << toHexString(expectedPrevHash) << std::endl;
-        std::cerr << "Recibido: " << toHexString(newBlock->header.prevBlockHash) << std::endl;
+    // Preparar todas las transacciones para el nuevo bloque
+    std::vector<std::unique_ptr<Transaction>> blockTransactions;
+    blockTransactions.push_back(std::make_unique<CoinbaseTransaction>(std::move(coinbaseTx)));
+
+    // Convertir las strings de pendingTxData en objetos Transaction simplificados
+    // NOTA: Estas transacciones AÚN NO SON COMPLETAMENTE REALISTAS (no gastan UTXOs reales, no hay firmas)
+    // Esto es solo para poblar el bloque con algo que tiene un TxId y es contable para el Merkle tree.
+    for (const std::string& txData : pendingTxData) {
+        // Por ahora, creamos transacciones "dummy" con 0 inputs y 1 output para un destinatario ficticio
+        // con un valor de 1 Rad y la data que nos pasaron. Esto cambiará con UTXOs y firmas.
+        std::vector<TxInput> dummyInputs; // Transacción sin inputs reales por ahora
+        std::vector<TxOutput> dummyOutputs;
+        dummyOutputs.emplace_back(1ULL, "R1mFRecipientAddress"); // 1 Rad a una dirección dummy
+
+        std::unique_ptr<Transaction> regularTx = std::make_unique<Transaction>(dummyInputs, dummyOutputs, txData);
+        regularTx->txId = regularTx->calculateHash(rxContext); // Calcular el TxId para la dummy transaction
+        blockTransactions.push_back(std::move(regularTx));
+    }
+    
+    std::unique_ptr<Block> newBlock = std::make_unique<Block>(
+        1, // Version
+        prevHash,
+        currentTimestamp,
+        difficulty,
+        std::move(blockTransactions) // Mover las transacciones al nuevo bloque
+    );
+
+    std::cout << "Minando Bloque #" << chain.size() << "..." << std::endl; // Usamos chain.size() para el número de bloque
+    mineBlockInternal(*newBlock, rxContext);
+    
+    // El hash final del bloque se ha asignado dentro de mineBlockInternal
+    std::cout << "Hash del bloque: " << toHexString(newBlock->header.blockHash) << std::endl;
+
+    return newBlock;
+}
+
+// Añade un bloque minado a la cadena y realiza validaciones básicas
+bool Blockchain::addBlock(std::unique_ptr<Block> block, RandomXContext& rxContext, const std::vector<std::string>& currentPendingTxData) {
+    if (!block) {
+        std::cerr << "Error: Intento de añadir un bloque nulo." << std::endl;
         return false;
     }
 
-    // 2. Verificar que el objetivo de dificultad sea el actual
-    if (newBlock->header.difficultyTarget != getCurrentDifficultyTarget()) {
-        std::cerr << "Error: El objetivo de dificultad del nuevo bloque no coincide." << std::endl;
+    if (chain.empty()) {
+        std::cerr << "Error: No se puede añadir un bloque sin que el Bloque Genesis exista ya." << std::endl;
         return false;
     }
 
-    // 3. Recalcular el hash del nuevo bloque y verificar la dificultad
-    //    NOTA: Esto requeriría una instancia de RandomXContext aquí también.
-    //    Por simplicidad para esta demo, asumiremos que el bloque ya fue minado correctamente
-    //    y solo comprobamos que el target sea correcto.
-    //    En un sistema real:
-    RandomXHash calculatedHash = newBlock->calculateHash(rxContext);
-    if (!checkDifficulty(calculatedHash, newBlock->header.difficultyTarget)) {
-        std::cerr << "Error: El hash del nuevo bloque no cumple la dificultad." << std::endl;
+    const Block& lastBlock = getLastBlock();
+
+    // 1. Verificar Previous Hash
+    if (block->header.prevBlockHash != lastBlock.header.blockHash) {
+        std::cerr << "Error: Previous Hash del bloque no coincide con el hash del ultimo bloque de la cadena." << std::endl;
+        std::cerr << "  Expected: " << toHexString(lastBlock.header.blockHash) << std::endl;
+        std::cerr << "  Got:      " << toHexString(block->header.prevBlockHash) << std::endl;
         return false;
     }
 
-    // 4. Verificar la raíz Merkle (recalcularla y comparar)
-    std::vector<RandomXHash> txHashes;
-    if (newBlock->transactions.empty()) {
-        // Un bloque no debería estar vacío de transacciones, al menos debe tener la coinbase
-        // A menos que sea un bloque génesis muy especial.
-        // Para esta demo, si no hay transacciones, la raíz Merkle debe ser 0.
-        RandomXHash expectedMerkleRoot;
-        expectedMerkleRoot.fill(0);
-        if (newBlock->header.merkleRoot != expectedMerkleRoot) {
-            std::cerr << "Error: Merkle Root incorrecta para bloque sin transacciones." << std::endl;
-            return false;
+    // 2. Verificar Proof of Work (dificultad)
+    // El hash del bloque ya debería estar en block->header.blockHash después de la minería
+    if (!checkDifficulty(block->header.blockHash, block->header.difficultyTarget)) {
+        std::cerr << "Error: El bloque no cumple con la dificultad requerida." << std::endl;
+        std::cerr << "  Hash del bloque: " << toHexString(block->header.blockHash) << std::endl;
+        std::cerr << "  Dificultad esperada (primer byte 0x00): 0x" << std::hex << std::setw(8) << std::setfill('0') << block->header.difficultyTarget << std::dec << std::endl;
+        return false;
+    }
+    
+    // 3. Verificar Merkle Root
+    // Recalcular el Merkle Root del bloque y compararlo con el que trae el header
+    std::vector<RandomXHash> txHashesForVerification;
+    for (const auto& tx_ptr : block->transactions) {
+        txHashesForVerification.push_back(tx_ptr->txId);
+    }
+    RandomXHash calculatedMerkleRoot;
+    if (!txHashesForVerification.empty()) {
+        if (txHashesForVerification.size() == 1) {
+            calculatedMerkleRoot = txHashesForVerification[0];
+        } else {
+            std::vector<RandomXHash> tempHashes = txHashesForVerification;
+            while (tempHashes.size() > 1) {
+                if (tempHashes.size() % 2 != 0) {
+                    tempHashes.push_back(tempHashes.back());
+                }
+                std::vector<RandomXHash> newLevel;
+                for (size_t i = 0; i < tempHashes.size(); i += 2) {
+                    std::vector<uint8_t> combined;
+                    for (uint8_t byte : tempHashes[i]) combined.push_back(byte);
+                    for (uint8_t byte : tempHashes[i+1]) combined.push_back(byte);
+                    newLevel.push_back(rxContext.calculateHash(combined));
+                }
+                tempHashes = newLevel;
+            }
+            calculatedMerkleRoot = tempHashes[0];
         }
     } else {
-        for (const auto& tx_ptr : newBlock->transactions) {
-            // Asegurarse de que el TxId de la transacción es correcto antes de pasarlo al Merkle tree
-            // Para la demo, asumimos que tx_ptr->txId ya fue calculado correctamente.
-            // En un sistema real, verificarías tx_ptr->calculateHash(rxContext) == tx_ptr->txId
-            txHashes.push_back(tx_ptr->txId);
-        }
-        MerkleTree verificationMerkleTree(txHashes, rxContext);
-        if (newBlock->header.merkleRoot != verificationMerkleTree.getMerkleRoot()) {
-            std::cerr << "Error: La raíz Merkle del nuevo bloque es incorrecta." << std::endl;
-            std::cerr << "Calculado: " << toHexString(verificationMerkleTree.getMerkleRoot()) << std::endl;
-            std::cerr << "Bloque:    " << toHexString(newBlock->header.merkleRoot) << std::endl;
-            return false;
-        }
+        calculatedMerkleRoot.fill(0); // O el hash de un bloque vacío si es la regla
     }
 
-    chain.push_back(std::move(newBlock));
-    //chain.push_back(*newBlock); // Añadir el bloque a la cadena
+    if (calculatedMerkleRoot != block->header.merkleRoot) {
+        std::cerr << "Error: El Merkle Root del bloque es invalido." << std::endl;
+        std::cerr << "  Calculado: " << toHexString(calculatedMerkleRoot) << std::endl;
+        std::cerr << "  En header: " << toHexString(block->header.merkleRoot) << std::endl;
+        return false;
+    }
+
+    // 4. (Simplificado por ahora) Validar Transacciones
+    // Asegurarse de que haya al menos una transacción (la coinbase)
+    if (block->transactions.empty()) {
+        std::cerr << "Error: El bloque no contiene transacciones." << std::endl;
+        return false;
+    }
+
+    // 5. Añadir el bloque a la cadena
+    chain.push_back(std::move(block));
+    std::cout << "Bloque #" << chain.size() -1 << " añadido a la cadena." << std::endl;
     return true;
 }
 
 const Block& Blockchain::getLastBlock() const {
-    if (chain.empty()) {
-        throw std::runtime_error("La cadena está vacía. No hay último bloque.");
-    }
-    return *chain.back(); // Desreferenciar el unique_ptr para devolver el objeto Block
+    return *chain.back();
 }
 
-std::unique_ptr<Block> Blockchain::mineNewBlock(RandomXContext& rxContext, const std::vector<std::string>& pendingTxData) {
-    if (chain.empty()) {
-        // Si la cadena está vacía, necesitamos minar el bloque génesis primero.
-        // Esto podría ser un error si mineNewBlock se llama antes de createGenesisBlock.
-        std::cerr << "Error: No se puede minar un bloque nuevo sin un bloque génesis." << std::endl;
-        return nullptr;
-    }
-
-    const Block& lastBlockRef = getLastBlock(); // Copia del último bloque para evitar problemas de referencia
-    RandomXHash lastBlockHash = lastBlockRef.calculateHash(rxContext); // Hash del bloque anterior para la semilla de RandomX
-
-    std::unique_ptr<Block> newBlock = std::make_unique<Block>();
-    newBlock->header.version = 1;
-    newBlock->header.prevBlockHash = lastBlockHash; // La semilla de RandomX para este nuevo bloque
-    //newBlock->header.merkleRoot.fill(0); // Placeholder
-    newBlock->header.timestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-    newBlock->header.difficultyTarget = getCurrentDifficultyTarget();
-    newBlock->header.nonce = 0; // Reiniciar nonce para el minado
-
-    // 1. Añadir la transacción Coinbase primero
-    std::unique_ptr<CoinbaseTransaction> coinbaseTx = createCoinbaseTx(chain.size(), "MinerRadix", rxContext);
-    newBlock->addTransaction(std::move(coinbaseTx));
-
-    // 2. Añadir transacciones pendientes (simuladas)
-    for (const std::string& txData : pendingTxData) {
-        std::unique_ptr<Transaction> tx = std::make_unique<Transaction>(txData); // C++14+ make_unique
-        tx->txId = tx->calculateHash(rxContext); // Calcular TxId
-        newBlock->addTransaction(std::move(tx));
-    }
-
-    // 3. Calcular y actualizar la raíz Merkle del bloque
-    newBlock->updateMerkleRoot(rxContext);
-
-    std::cout << "Minando nuevo bloque con Prev Hash: " << toHexString(newBlock->header.prevBlockHash) << std::endl;
-    std::cout << "Merkle Root a buscar: " << toHexString(newBlock->header.merkleRoot) << std::endl;
-
-    while (true) {
-        newBlock->header.nonce++;
-        Radix::RandomXHash blockHash = newBlock->calculateHash(rxContext);
-
-        if (checkDifficulty(blockHash, newBlock->header.difficultyTarget)) {
-            std::cout << "Bloque minado exitosamente con Nonce: " << newBlock->header.nonce << std::endl;
-            std::cout << "Hash del bloque: " << toHexString(blockHash) << std::endl;
-            return newBlock;
-        }
-
-        // Evitar bucle infinito si el nonce desborda antes de encontrar el hash
-        if (newBlock->header.nonce == std::numeric_limits<uint32_t>::max()) {
-            std::cerr << "Advertencia: Nonce desbordado. Cambiando timestamp para variar el hash." << std::endl;
-            newBlock->header.nonce = 0;
-            newBlock->header.timestamp++; // Incrementa el timestamp para cambiar el hash de entrada a RandomX
-            // IMPORTANTE: Si el timestamp cambia, el hash de la cabecera cambia.
-            // Para RandomX, la semilla también es el hash del bloque anterior.
-            // Aquí, no estamos cambiando la semilla de RandomX en cada iteración del nonce.
-            // El `calculateHash` del bloque ya maneja la re-inicialización del VM si la semilla cambia.
-            // Pero el hash del bloque anterior (prevBlockHash) es la semilla para RandomX.
-            // No la cambies dentro del bucle de minería, solo el nonce y timestamp.
-            // El prevBlockHash se fija cuando se crea el bloque para minar.
-        }
-    }
-}
-
-uint32_t Blockchain::getCurrentDifficultyTarget() const {
-    // Esto es muy simplificado. La dificultad se debe ajustar cada 2016 bloques.
-    // Para esta demo, haremos que el target sea fijo y fácil de alcanzar:
-    // Que el primer byte del hash sea 0.
-    // Un target de 0x00FFFFFFFF... significa que el primer byte debe ser 0.
-    return 0x00FFFFFF; // Target que requiere un byte inicial de 0 en el hash
-}
-
-bool Blockchain::checkDifficulty(const RandomXHash& hash, uint32_t target) const {
-    // el hash debe ser menor que el target.
-    // Convertimos el hash (32 bytes) a un número grande y lo comparamos con el target.
-    // Para esta demo simplificada, interpretaremos el target como:
-    // Si target = 0x00FFFFFFFF..., significa que el primer byte del hash debe ser 0.
-    // Si target = 0x0000FFFFFFFF..., significa que los dos primeros bytes del hash deben ser 0.
-
-    // Interpretación simple: el `target` representa un prefijo de ceros.
-    // Por ejemplo, si target es 0x00FFFFFF, el hash[0] debe ser 0.
-    // Si target es 0x0000FFFF, hash[0] y hash[1] deben ser 0.
-    // Esto no es una comparación numérica de 256 bits, sino una verificación de prefijo.
-
-    // Para una comparación numérica real:
-    // Creamos un número grande a partir del hash y comparamos.
-    // Necesitaríamos una librería para números grandes (como Boost.Multiprecision o OpenSSL BIGNUM).
-    // Sin embargo, para una demostración mínima, podemos verificar los bits más significativos.
-    // Un hash es válido si es menor que el target.
-
-    // Para un target de ejemplo `0x00FFFFFF` (1 byte inicial a cero):
-    //if (hash[0] != 0x00) return false;
-    // Si queremos 2 bytes iniciales a cero (target `0x0000FFFF`):
-    // if (hash[0] != 0x00 || hash[1] != 0x00) return false;
-
-    // Para el target actual (0x00FFFFFF), solo verificamos el primer byte.
-    // Un hash es válido si es numéricamente menor que el target.
-    // Interpretamos el target como un número grande.
-    // Aquí, para simplificar, usaremos un prefijo de ceros.
-
-    // Convierte el hash a un número grande y lo compara con el target.
-    // Esto requiere una función de comparación de números grandes.
-    // Dado que no tenemos una librería de números grandes aquí,
-    // podemos simularlo comparando los bytes de manera lexicográfica,
-    // o simplemente esperando un cierto número de ceros iniciales.
-    // Debe comparar un hash de 256 bits (target hash) con el hash del bloque.
-
-    // Implementación simplificada: el hash debe ser menor que el target numéricamente.
-    // Un hash de 32 bytes (256 bits).
-    // Un target de 32 bytes (256 bits), donde los primeros bytes suelen ser 0 para alta dificultad.
-
-    // Para esta etapa, vamos a hacer una comparación byte por byte desde el principio.
-    // El objetivo es que el hash sea menor que el target.
-    // Asumimos que `target` es un número donde los primeros bytes son ceros y luego hay un valor.
-    // Por ejemplo, si `target` es 0x00000FFF... (los dos primeros bytes son 0),
-    // el hash debe comenzar con 0x00, 0x00 y luego ser menor o igual que 0x0F...
-    // O simplemente, el hash numéricamente debe ser menor que el target.
-
-    // Vamos a convertir el target (uint32_t) a un RandomXHash para comparación.
-    //RandomXHash targetHashConverted;
-    //targetHashConverted.fill(0); // Rellenar con ceros
-    // El target se interpreta como un número de 256 bits con el valor en el extremo derecho.
-    // El target debe ser un `compact` que se expande a 256 bits.
-    // Por ejemplo, si `target` es 0x1d00FFFF, el exponente es 0x1d (29).
-    // Significa que el número es FFFF y luego 29-3=26 bytes de ceros.
-    // 0x00000000FFFF0000000000000000000000000000000000000000000000000000
-
-    // Para nuestra demostración, `difficultyTarget` será un número de 32 bits.
-    // Queremos que el hash de 256 bits sea menor que un número target de 256 bits.
-    // El target real debería ser un RandomXHash.
-
-    // Para esta etapa, la forma más fácil de verificar la dificultad es
-    // pedir un cierto número de ceros iniciales en el hash.
-    // El `difficultyTarget` podría ser el número de bytes iniciales que deben ser cero.
-    // Si `difficultyTarget` es 1, el hash[0] debe ser 0.
-    // Si `difficultyTarget` es 2, hash[0] y hash[1] deben ser 0.
-
-    // Cambiemos `difficultyTarget` a `uint8_t zerosPrefixCount;`
-    // Para mantenerlo como uint32_t, asumamos que `target` es un valor binario que
-    // debe ser mayor que el hash resultante.
-
-    // Para una implementación "real" sin librerías de números grandes:
-    // Compara el hash (RandomXHash) byte a byte con un target de 32 bytes (RandomXHash).
-    // El `difficultyTarget` de la cabecera es un "compact target".
-    // Para simplificar, aquí lo haremos como un prefijo de ceros.
-    // Por ejemplo, si `target = 0x0000FFFF`: significa que los 2 primeros bytes del hash deben ser 0.
-
-    //if ((hash[0] & 0xFF) > (target >> 24)) return false; // Comparar byte más significativo del hash con el target
-    //if ((hash[0] & 0xFF) < (target >> 24)) return true; // Si es menor, ya cumple
-
-    // Si el primer byte es igual, compara el segundo
-    //if ((hash[1] & 0xFF) > ((target >> 16) & 0xFF)) return false;
-    //if ((hash[1] & 0xFF) < ((target >> 16) & 0xFF)) return true;
-
-    // Y así sucesivamente para los 4 bytes de target. Esto es una simplificación MUY GRANDE.
-    // Una comparación numérica real de 256 bits es necesaria para una criptomoneda funcional.
-    // Para esta demo, simplemente diremos que el primer byte del hash debe ser 0.
-    // Por eso el `difficultyTarget` de 0x00FFFFFF.
-    return hash[0] == 0x00; // Requiere que el primer byte del hash sea 0
-}
-
-std::unique_ptr<Radix::CoinbaseTransaction> Radix::Blockchain::createCoinbaseTx(uint32_t blockHeight, const std::string& minerAddress, RandomXContext& rxContext) {
-    uint64_t reward = 50ULL * 100000000ULL; // 50 RDX (asumiendo 8 decimales)
-    std::string coinbaseData = "Block #" + std::to_string(blockHeight) + " mined by " + minerAddress;
-    std::unique_ptr<CoinbaseTransaction> tx = std::make_unique<CoinbaseTransaction>(reward, coinbaseData);
-    tx->txId = tx->calculateHash(rxContext); // Calcular TxId para la transacción Coinbase
-    return tx;
+size_t Blockchain::getChainSize() const {
+    return chain.size();
 }
 
 } // namespace Radix
