@@ -1,46 +1,68 @@
 #include "randomx_util.h"
-#include <iostream>
-#include <iomanip> // Para std::setw, std::setfill
-#include <sstream> // Para std::stringstream
-#include <vector> // Asegúrate de que está incluido para std::vector
-#include <stdexcept> // Para std::runtime_error
+#include <randomx.h>     // Asegúrate de que randomx.h esté incluido
+#include <iomanip>       // Para std::hex, std::setw
+#include <sstream>       // Para std::stringstream
+#include <stdexcept>     // Para std::runtime_error
+#include <vector>        // Para std::vector
+#include <cstring>       // Para memcpy si es necesario
 
 namespace Radix {
 
-RandomXContext::RandomXContext() : cache(nullptr), vm(nullptr) {
-    // Generar una semilla fija o predeterminada para la inicialización del cache.
-    // En una implementación real de una blockchain, esta semilla (o una semilla
-    // derivada de datos del bloque anterior/cadena) podría ser más compleja.
-    std::string seed_str = "RadixBlockchainSeed12345ForPoW"; // Una semilla de ejemplo
-    std::vector<uint8_t> seed(seed_str.begin(), seed_str.end());
+RandomXContext::RandomXContext() : flags(RANDOMX_FLAG_DEFAULT), vm(nullptr), cache(nullptr), dataset(nullptr) {
+    // Determine the optimal flags for the current CPU
+    flags = randomx_flags();
 
-    // Crear el cache RandomX (puede tardar un poco y usar bastante RAM)
-    // RANDOMX_FLAG_DEFAULT incluye flags como JIT e HASH_ALG
-    cache = randomx_alloc_cache(RANDOMX_FLAG_DEFAULT);
+    // Allocate memory for the cache
+    cache = randomx_alloc_cache(flags);
     if (!cache) {
-        // En un programa real, esto debería manejar el error de forma más elegante
-        // (lanzar una excepción, registrar el error, etc.)
-        std::cerr << "Error: No se pudo asignar el cache RandomX. Posiblemente falta de RAM." << std::endl;
         throw std::runtime_error("Failed to allocate RandomX cache.");
     }
-    randomx_init_cache(cache, seed.data(), seed.size());
 
-    // Crear la máquina virtual RandomX
-    // El último argumento (dataset) es NULL porque el dataset se crea a partir del cache.
-    vm = randomx_create_vm(RANDOMX_FLAG_DEFAULT, cache, NULL);
-    if (!vm) {
-        // Liberar el cache si la VM falla para evitar fugas de memoria.
+    // Allocate memory for the dataset
+    dataset = randomx_alloc_dataset(flags);
+    if (!dataset) {
         randomx_release_cache(cache);
-        std::cerr << "Error: No se pudo crear la VM RandomX." << std::endl;
+        throw std::runtime_error("Failed to allocate RandomX dataset.");
+    }
+
+    // Allocate the VM (virtual machine)
+    // Orden de argumentos de randomx_create_vm ya estaba corregido
+    vm = randomx_create_vm(flags, cache, dataset);
+    if (!vm) {
+        randomx_release_dataset(dataset);
+        randomx_release_cache(cache);
         throw std::runtime_error("Failed to create RandomX VM.");
     }
 }
 
+// Implementación del método initCache
+void RandomXContext::initCache(const std::vector<uint8_t>& seed) {
+    if (!cache) {
+        throw std::runtime_error("RandomX cache not allocated or initialized.");
+    }
+    randomx_init_cache(cache, seed.data(), seed.size());
+}
+
+// Implementación del método initDataset
+void RandomXContext::initDataset() {
+    if (!dataset || !cache) {
+        throw std::runtime_error("RandomX dataset or cache not allocated or initialized.");
+    }
+
+    // Initialize the entire dataset at once using randomx_init_dataset.
+    // This addresses the "not declared" error for randomx_init_dataset_item.
+    unsigned long dataset_item_count_val = randomx_dataset_item_count();
+    randomx_init_dataset(dataset, cache, 0, dataset_item_count_val);
+}
+
 RandomXContext::~RandomXContext() {
-    // Asegurarse de liberar la VM y el cache para evitar fugas de memoria.
     if (vm) {
         randomx_destroy_vm(vm);
-        vm = nullptr;
+        vm = nullptr; // Buenas prácticas: establece el puntero a nullptr después de liberarlo
+    }
+    if (dataset) {
+        randomx_release_dataset(dataset);
+        dataset = nullptr;
     }
     if (cache) {
         randomx_release_cache(cache);
@@ -48,19 +70,38 @@ RandomXContext::~RandomXContext() {
     }
 }
 
-// Implementación de calculateHash que solo toma los datos de entrada
-RandomXHash RandomXContext::calculateHash(const std::vector<uint8_t>& data) {
-    RandomXHash hash_array;
-    // randomx_calculate_hash toma (randomx_vm* vm, const void* input, size_t input_size, void* output)
-    randomx_calculate_hash(vm, data.data(), data.size(), hash_array.data());
-    return hash_array;
+// Implementación del método hash para std::vector<uint8_t>
+RandomXHash RandomXContext::hash(const std::vector<uint8_t>& data) const {
+    if (!vm) {
+        throw std::runtime_error("RandomX VM not initialized.");
+    }
+    RandomXHash result;
+    randomx_calculate_hash(vm, data.data(), data.size(), result.data());
+    return result;
 }
 
-// Función de utilidad para convertir un hash a string hexadecimal
+// Implementación del método hash para std::string (sobrecarga)
+RandomXHash RandomXContext::hash(const std::string& data) const {
+    // Convierte el string a std::vector<uint8_t> y luego calcula el hash
+    std::vector<uint8_t> data_vec(data.begin(), data.end());
+    return hash(data_vec); // Llama a la otra sobrecarga
+}
+
+// Función de utilidad para convertir un hash RandomX a una cadena hexadecimal.
 std::string toHexString(const RandomXHash& hash) {
     std::stringstream ss;
     ss << std::hex << std::setfill('0');
     for (uint8_t b : hash) {
+        ss << std::setw(2) << static_cast<int>(b);
+    }
+    return ss.str();
+}
+
+// Función de utilidad para convertir un vector de bytes a una cadena hexadecimal.
+std::string toHexString(const std::vector<uint8_t>& bytes) {
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+    for (uint8_t b : bytes) {
         ss << std::setw(2) << static_cast<int>(b);
     }
     return ss.str();

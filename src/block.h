@@ -4,47 +4,50 @@
 #include <cstdint>
 #include <vector>
 #include <string>
-#include <array>
 #include <memory> // Para std::unique_ptr
-
-#include "transaction.h" // Incluir Transaction para usarlo en el vector
-#include "randomx_util.h" // Para RandomXHash
+#include "transaction.h"
+#include "merkle_tree.h"
+#include "randomx_util.h" // Necesario para RandomXHash y RandomXContext
 
 namespace Radix {
 
-struct BlockHeader {
+class RandomXContext; // Declaración adelantada
+
+class Block {
+public:
     uint32_t version;
-    RandomXHash prevBlockHash;
+    RandomXHash prevHash;
     RandomXHash merkleRoot;
     uint32_t timestamp;
     uint32_t difficultyTarget;
     uint64_t nonce;
-    RandomXHash blockHash; // ¡NUEVO CAMPO: El hash de este propio bloque!
-};
+    RandomXHash hash;
+    std::vector<Transaction> transactions;
 
-class Block {
-public:
-    BlockHeader header;
-    std::vector<std::unique_ptr<Transaction>> transactions;
+    // Constructor
+    Block(uint32_t version, const RandomXHash& prevHash, uint32_t difficultyTarget, const std::vector<std::string>& pendingTxData, Radix::RandomXContext& rxContext);
 
-    // Constructor que toma el vector de transacciones por rvalue reference (std::move)
-    Block(uint32_t version, const RandomXHash& prevHash, uint32_t timestamp,
-          uint32_t difficultyTarget, std::vector<std::unique_ptr<Transaction>>&& txs); // Fíjate en '&& txs'
-
-    // Constructor por defecto (quizás no sea necesario si siempre usamos el otro)
-    Block();
-
-    // --- ¡DESHABILITAR CONSTRUCTOR DE COPIA Y ASIGNACIÓN DE COPIA! ---
-    Block(const Block&) = delete; // Elimina el constructor de copia
-    Block& operator=(const Block&) = delete; // Elimina el operador de asignación de copia
-    // ------------------------------------------------------------------
-
-    // Constructor de movimiento y operador de asignación de movimiento (implícitamente generados por unique_ptr o definidos si hay recursos propios)
-    // std::unique_ptr ya maneja el movimiento correctamente.
-
-    void updateMerkleRoot(RandomXContext& rxContext); // Asegura que las transacciones tienen sus TxIds calculados
+    // Recompute the block hash
     RandomXHash calculateHash(RandomXContext& rxContext) const;
-    std::string toString() const;
+    
+    // Método para minar el bloque (encuentra el nonce)
+    void mine(RandomXContext& rxContext);
+
+    // Serializa el header del bloque
+    std::vector<uint8_t> serializeHeader() const;
+
+    // Obtener el Merkle Root de las transacciones
+    RandomXHash getMerkleRoot() const;
+
+    // Ahora toString() acepta un RandomXContext
+    std::string toString(Radix::RandomXContext& rxContext) const;
+
+private:
+    // Helper para serializar las transacciones para el Merkle Tree
+    // NOTA: Esta función privada 'getTransactionHashes' no es estrictamente necesaria
+    // si getMerkleRoot ya itera sobre las transacciones directamente para sus hashes.
+    // La elimino en .cpp, pero la dejo comentada aquí por si en el futuro se quiere usar.
+    // std::vector<RandomXHash> getTransactionHashes(Radix::RandomXContext& rxContext) const;
 };
 
 } // namespace Radix

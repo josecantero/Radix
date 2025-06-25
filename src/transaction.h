@@ -1,91 +1,72 @@
 #ifndef TRANSACTION_H
 #define TRANSACTION_H
 
-#include <cstdint>
 #include <vector>
 #include <string>
 #include <array>
-#include <memory> // For std::unique_ptr
+#include <memory> // Para std::unique_ptr
+
+#include "randomx_util.h" // Para RandomXHash y Address
+#include "crypto.h"       // Para PublicKey, Signature
 
 namespace Radix {
 
-// Type for representing currency amount (e.g., satoshis or rads)
 using Rads = uint64_t;
-using Address = std::string;
-using RandomXHash = std::array<uint8_t, 32>; // Definition forward or include if not coming from Block.h
 
-// Forward declaration for RandomXContext (needed if its used in a function signature in the header)
-class RandomXContext;
+// Tipo para el hash de transacción (mismo que RandomXHash)
+using TxId = Radix::RandomXHash;
 
-// Structure for representing a transaction input (UTXO being spent)
+// Estructura para representar una entrada de transacción
 struct TxInput {
-    RandomXHash prevTxId;    // ID of the previous transaction from which this output comes
-    uint32_t outputIndex;    // Index of the output in the previous transaction
-    std::vector<uint8_t> signature; // Digital signature proving ownership
+    Radix::RandomXHash prevTxId; // Hash de la transacción anterior
+    uint32_t outputIndex;        // Índice de la salida en la transacción anterior
+    Radix::Signature signature;  // Firma del input (scriptSig en Bitcoin)
+    Radix::PublicKey pubKey;     // Clave pública del firmante (¡asegúrate de que este sea el nombre!)
 
-    // Constructor
-    TxInput(const RandomXHash& pTxId, uint32_t oIdx, const std::vector<uint8_t>& sig = {});
-
-    // Serialization function for hashing
-    std::vector<uint8_t> serializeForHash() const;
     std::string toString() const;
 };
 
-// Structure for representing a transaction output (new UTXOs created)
+// Estructura para representar una salida de transacción
 struct TxOutput {
-    Rads value;         // Amount of Rads
-    Address toAddress;  // Recipient's address
+    uint64_t amount;           // Cantidad de unidades (ej. satoshis)
+    Radix::Address recipientAddress; // Dirección del destinatario
 
-    // Constructor
-    TxOutput(Rads val, const Address& toAddr);
-
-    // Serialization function for hashing
-    std::vector<uint8_t> serializeForHash() const;
     std::string toString() const;
 };
 
+// Clase principal para una transacción
 class Transaction {
 public:
-    RandomXHash txId; // Hash of the transaction (unique identifier)
-    uint32_t version;
-    uint32_t timestamp;
-    std::vector<TxInput> inputs;
-    std::vector<TxOutput> outputs;
-    std::string data; // Field for arbitrary data or a message (e.g., OP_RETURN)
+    // Constructor general para transacciones normales
+    Transaction(const std::vector<TxInput>& inputs, const std::vector<TxOutput>& outputs, Radix::RandomXContext& rxContext);
 
-    // Constructor for regular transactions
-    Transaction(const std::vector<TxInput>& inputs, const std::vector<TxOutput>& outputs, const std::string& data = "");
+    // Constructor específico para transacciones Coinbase
+    Transaction(const std::vector<TxOutput>& outputs, Radix::RandomXContext& rxContext);
 
-    // Default constructor
-    Transaction();
+    // Constructor por defecto (necesario si hay otros constructores)
+    Transaction() = default; 
 
-    // Calculates the hash of the transaction for its ID (includes all relevant parts)
-    RandomXHash calculateHash(RandomXContext& rxContext) const;
-    
-    // Calculates the hash of the common transaction data for signing (excludes existing signatures)
-    std::vector<uint8_t> serializeCommonDataForSigning() const;
-    
-    // Serializes all transaction data for its ID calculation
-    std::vector<uint8_t> serializeAllData() const;
+    // Métodos para obtener datos
+    const TxId& getTxId() const { return txId; }
+    const std::vector<TxInput>& getInputs() const { return inputs; }
+    const std::vector<TxOutput>& getOutputs() const { return outputs; }
+    bool isCoinbaseTransaction() const { return isCoinbase; } 
 
-    // --- NEW DECLARATION HERE! ---
-    RandomXHash calculateHashForSigning(RandomXContext& rxContext) const;
-    // -----------------------------
+    // Cálculo del ID de la transacción (hash de la transacción)
+    void calculateTxId(Radix::RandomXContext& rxContext);
 
+    // Serialización para imprimir y hashear
     std::string toString() const;
 
-private:
-    // Helper to serialize input/output lists for hashing
-    std::vector<uint8_t> serializeInputsForHash() const;
-    std::vector<uint8_t> serializeOutputsForHash() const;
-};
+    // Verificación de firmas
+    bool verifySignatures(Radix::RandomXContext& rxContext) const;
 
-// Derived class for Coinbase transactions (block reward)
-class CoinbaseTransaction : public Transaction {
-public:
-    // Coinbase transaction constructor
-    // Coinbase transactions have no inputs, only outputs and additional data
-    CoinbaseTransaction(Rads reward, const Address& minerAddress, const std::string& data = "");
+private:
+    TxId txId;
+    std::vector<TxInput> inputs;
+    std::vector<TxOutput> outputs;
+    bool isCoinbase; // Añadir este miembro
+
 };
 
 } // namespace Radix

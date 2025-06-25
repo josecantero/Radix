@@ -3,36 +3,34 @@
 
 #include <vector>
 #include <array>
+#include <string>
 #include <cstdint> // Para uint8_t
+
 #include "randomx_util.h" // Para RandomXHash y RandomXContext
 
 namespace Radix {
 
-// Declaración forward de RandomXContext si no se incluye randomx_util.h completamente
-// class RandomXContext; // Ya incluido arriba
-
 class MerkleTree {
 public:
-    // Constructor que toma las hojas (hashes de transacciones) y un contexto RandomX
-    // ¡CORREGIDO EL CONSTRUCTOR PARA REFLEJAR LA IMPLEMENTACIÓN!
-    MerkleTree(const std::vector<RandomXHash>& leafHashes);
-
-    // Obtiene el hash raíz del árbol Merkle
+    MerkleTree(const std::vector<RandomXHash>& leaves);
+    
     RandomXHash getRootHash() const;
-
-    // Función de validación (ejemplo, la implementación actual es un placeholder)
-    bool validateTree() const;
+    
+    // Declaración correcta de toString
+    std::string toString() const; 
 
 private:
-    std::vector<RandomXHash> leaves; // Hashes de las transacciones (hojas)
-    RandomXHash rootHash;            // Hash raíz del árbol Merkle
+    RandomXHash rootHash;
 
-    // Función privada para construir el árbol Merkle
-    // ¡CORREGIDO PARA HACERLA PRIVADA Y SIN ARGUMENTOS EXPLICITOS EN LA DECLARACIÓN!
-    void buildTree();
-
-    // Función para hashear un par de hashes
-    RandomXHash hashPair(const RandomXHash& hash1, const RandomXHash& hash2, RandomXContext& rxContext);
+    // Función auxiliar para calcular el hash de un par de nodos
+    // Ahora es un método estático o se maneja la instancia de rxContext de otra forma.
+    // Para simplificar y dado que el MerkleTree necesita una RXContext para hashear,
+    // se puede pasar como parámetro donde se necesite o la MerkleTree lo guarde.
+    // Dado el error anterior, lo moveremos al constructor si es para inicialización
+    // o se pasará en funciones que requieran hashing.
+    // La versión anterior tenía un placeholder para SHA256 directo sin RXContext
+    // lo que causó algunos de los errores.
+    static RandomXHash hashPair(const RandomXHash& hash1, const RandomXHash& hash2, Radix::RandomXContext& rxContext);
 };
 
 } // namespace Radix

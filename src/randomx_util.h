@@ -5,31 +5,40 @@
 #include <vector>
 #include <string>
 #include <array>
-#include <cstdint> // Para uint8_t
+#include <cstdint> // Necesario para uint8_t
 
 namespace Radix {
 
-// Definición de RandomXHash como un array de 32 bytes
-using RandomXHash = std::array<uint8_t, 32>;
-using Address = std::string; // Definición de Address para direcciones de billetera
+// Tipo para representar el hash de 32 bytes (RandomXHash)
+using RandomXHash = std::array<uint8_t, 32>; // Cambiado a uint8_t para consistencia
 
-// Clase para gestionar el contexto RandomX
+// Tipo para representar una dirección Radix
+using Address = std::string;
+
+// Clase para encapsular el contexto de RandomX
 class RandomXContext {
 public:
     RandomXContext();
     ~RandomXContext();
 
-    // Calcula un hash RandomX de los datos proporcionados.
-    // Esta versión ahora solo toma los datos a hashear.
-    RandomXHash calculateHash(const std::vector<uint8_t>& data);
+    // Métodos para inicializar el caché y el dataset (ahora públicos y declarados)
+    void initCache(const std::vector<uint8_t>& seed);
+    void initDataset();
+
+    // Métodos para calcular el hash (renombrados de calculateHash a hash)
+    RandomXHash hash(const std::vector<uint8_t>& data) const;
+    RandomXHash hash(const std::string& data) const; // Sobrecarga para strings
 
 private:
-    randomx_cache* cache;
+    randomx_flags flags;
     randomx_vm* vm;
+    randomx_cache* cache;
+    randomx_dataset* dataset;
 };
 
-// Función de utilidad para convertir un hash RandomX (std::array<uint8_t, 32>) a una string hexadecimal
+// Funciones de utilidad para convertir hashes y bytes a string hexadecimal
 std::string toHexString(const RandomXHash& hash);
+std::string toHexString(const std::vector<uint8_t>& bytes);
 
 } // namespace Radix
 
