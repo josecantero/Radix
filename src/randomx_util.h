@@ -21,7 +21,7 @@ public:
     RandomXContext();
     ~RandomXContext();
 
-    // Métodos para inicializar el caché y el dataset (ahora públicos y declarados)
+    // Métodos para inicializar el caché y el dataset
     void initCache(const std::vector<uint8_t>& seed);
     void initDataset();
 
@@ -39,6 +39,10 @@ private:
 // Funciones de utilidad para convertir hashes y bytes a string hexadecimal
 std::string toHexString(const RandomXHash& hash);
 std::string toHexString(const std::vector<uint8_t>& bytes);
+
+// Funciones de utilidad para convertir string hexadecimal a hash o vector de bytes
+void fromHexString(const std::string& hexString, RandomXHash& hash);
+void fromHexString(const std::string& hexString, std::vector<uint8_t>& bytes);
 
 } // namespace Radix
 

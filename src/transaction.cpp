@@ -1,133 +1,162 @@
+// transaction.cpp
 #include "transaction.h"
-#include "crypto.h"       // Necesario para KeyPair::verify
-#include "randomx_util.h" // Para toHexString
-#include <iostream>
-#include <sstream>
-#include <algorithm>      // Para std::all_of
-#include <openssl/sha.h>  // Añadido para SHA256
+#include "crypto.h" // Para Radix::SHA256, KeyPair
+#include "randomx_util.h" // Para Radix::toHexString, Radix::RandomXHash, Radix::fromHexString
+
+#include <sstream> // Para stringstream
+#include <chrono> // Para timestamp
+#include <algorithm> // Para std::all_of
+#include <iostream> // Para std::cerr
 
 namespace Radix {
 
-// --------------------------------------------------------------------------------
-// TransactionInput (TxInput) Methods
-// --------------------------------------------------------------------------------
+// Constructor por defecto para transacciones (usado para coinbase por defecto)
+Transaction::Transaction(bool isCoinbase)
+    : isCoinbase(isCoinbase), timestamp(std::chrono::duration_cast<std::chrono::seconds>(
+                                   std::chrono::system_clock::now().time_since_epoch()).count()) {
+    updateId(); // Calcula y asigna el ID de la transacción
+}
 
-std::string TxInput::toString() const {
+// Constructor completo
+Transaction::Transaction(std::string id, bool isCoinbase, std::vector<TransactionInput> inputs,
+                         std::vector<TransactionOutput> outputs, long long timestamp)
+    : id(id), isCoinbase(isCoinbase), inputs(inputs), outputs(outputs), timestamp(timestamp) {}
+
+// Calcula el hash único de la transacción (TxID).
+// Este hash incluye todos los datos esenciales de la transacción, pero NO las firmas ni claves públicas
+// de las entradas, ya que estas son pruebas, no parte del contenido base de la transacción.
+std::string Transaction::calculateHash() const {
     std::stringstream ss;
-    ss << "  PrevTxId: " << toHexString(prevTxId) << "\n";
-    ss << "  OutputIndex: " << outputIndex << "\n";
-    ss << "  Signature: " << toHexString(signature) << "\n";
-    ss << "  PubKey: " << toHexString(pubKey) << "\n"; 
-    return ss.str();
-}
-
-// --------------------------------------------------------------------------------
-// TransactionOutput (TxOutput) Methods
-// --------------------------------------------------------------------------------
-
-std::string TxOutput::toString() const {
-    std::stringstream ss;
-    ss << "  Amount: " << amount << "\n"; 
-    ss << "  RecipientAddress: " << recipientAddress << "\n"; 
-    return ss.str();
-}
-
-// --------------------------------------------------------------------------------
-// Transaction Methods
-// --------------------------------------------------------------------------------
-
-// Constructor general para transacciones normales
-Transaction::Transaction(const std::vector<TxInput>& inputs, const std::vector<TxOutput>& outputs, Radix::RandomXContext& rxContext)
-    : inputs(inputs), outputs(outputs), isCoinbase(false) { 
-    calculateTxId(rxContext);
-}
-
-// Constructor para transacciones Coinbase
-Transaction::Transaction(const std::vector<TxOutput>& outputs, Radix::RandomXContext& rxContext)
-    : outputs(outputs), isCoinbase(true) {
-    this->inputs.clear(); 
-    calculateTxId(rxContext);
-}
-
-
-void Transaction::calculateTxId(Radix::RandomXContext& rxContext) {
-    std::stringstream ss;
-
-    // Serializar inputs (excluyendo la firma y la clave pública para el TxId)
-    // El TxId es un identificador de la transacción, no debe cambiar por la firma.
+    ss << (isCoinbase ? "coinbase" : "transaction"); // Identificador del tipo de transacción
     for (const auto& input : inputs) {
-        ss << toHexString(input.prevTxId) << input.outputIndex;
-    }
-
-    // Serializar outputs
-    for (const auto& output : outputs) {
-        ss << output.amount << output.recipientAddress; 
-    }
-
-    std::string txData = ss.str();
-    
-    // Usar SHA256 para el TxId (como en Bitcoin)
-    unsigned char hash_digest[SHA256_DIGEST_LENGTH];
-    SHA256((const unsigned char*)txData.data(), txData.size(), hash_digest);
-    std::copy(hash_digest, hash_digest + SHA256_DIGEST_LENGTH, txId.begin());
-}
-
-// Serializa la transacción para imprimirla
-std::string Transaction::toString() const {
-    std::stringstream ss;
-    ss << "Transaction ID: " << toHexString(txId) << "\n";
-    ss << "  Is Coinbase: " << (isCoinbase ? "Yes" : "No") << "\n"; 
-    ss << "  Inputs (" << inputs.size() << "):\n";
-    for (const auto& input : inputs) {
-        ss << input.toString();
-    }
-    ss << "  Outputs (" << outputs.size() << "):\n";
-    for (const auto& output : outputs) {
-        ss << output.toString();
-    }
-    return ss.str();
-}
-
-// Verifica las firmas de los inputs de la transacción
-bool Transaction::verifySignatures(Radix::RandomXContext& rxContext) const {
-    // 1. Las transacciones Coinbase no tienen entradas y, por lo tanto, no tienen firmas que verificar.
-    if (this->isCoinbase) { // Usar el flag isCoinbase
-        return true; 
-    }
-
-    // Hash de la transacción para la verificación de firmas (misma lógica que calculateTxId)
-    // El mensaje que se firma es el hash de los inputs y outputs (sin las firmas)
-    std::stringstream ss_for_hash;
-    for (const auto& input : inputs) {
-        ss_for_hash << toHexString(input.prevTxId) << input.outputIndex;
+        // Incluye solo la parte de la entrada que se compromete al hash (prevTxId, outputIndex)
+        ss << input.prevTxId << input.outputIndex;
     }
     for (const auto& output : outputs) {
-        ss_for_hash << output.amount << output.recipientAddress; 
+        // Incluye la cantidad y la dirección del destinatario de cada salida
+        ss << output.amount << output.recipientAddress;
     }
-    std::string txDataToSign = ss_for_hash.str();
+    ss << timestamp; // Incluye la marca de tiempo para asegurar unicidad
 
-    Radix::RandomXHash txHashToVerify; 
-    unsigned char hash_digest[SHA256_DIGEST_LENGTH];
-    SHA256((const unsigned char*)txDataToSign.data(), txDataToSign.size(), hash_digest);
-    std::copy(hash_digest, hash_digest + SHA256_DIGEST_LENGTH, txHashToVerify.begin());
+    std::string data = ss.str();
+    // CORRECCIÓN: Llamar a Radix::SHA256 con un solo argumento std::string
+    Radix::RandomXHash hash_bytes = Radix::SHA256(data); // Calcula SHA256 del string de datos
+    return Radix::toHexString(hash_bytes); // Devuelve el hash en formato hexadecimal
+}
 
+// Calcula el hash que debe ser firmado por los remitentes de la transacción.
+// En este diseño, es simplemente el ID de la transacción.
+Radix::RandomXHash Transaction::getHashForSignature() const {
+    std::string txIdStr = calculateHash(); // Obtiene el TxID como cadena hexadecimal
+    Radix::RandomXHash hashBytes;
+    // fromHexString está en randomx_util.h/cpp, por eso es importante que esté incluido
+    Radix::fromHexString(txIdStr, hashBytes); // Convierte la cadena hexadecimal a un array de bytes
+    return hashBytes;
+}
+
+// Firma todas las entradas de la transacción utilizando el par de claves del remitente.
+void Transaction::sign(const Radix::KeyPair& signerKeys) {
+    if (isCoinbase) {
+        // Las transacciones de Coinbase no tienen entradas para firmar; son implícitamente "firmadas" por el minero.
+        return;
+    }
+
+    Radix::RandomXHash hashToSign = getHashForSignature(); // El hash de la transacción a firmar
+
+    // Itera sobre todas las entradas de la transacción.
+    // En un modelo de blockchain simplificado como este, asumimos que todas las entradas son firmadas
+    // por la misma clave del remitente. En una blockchain real, cada entrada de UTXO
+    // sería firmada por el propietario de esa UTXO específica.
+    for (auto& input : inputs) {
+        input.signature = signerKeys.sign(hashToSign); // Firma el hash y obtiene la firma
+        input.pubKey = signerKeys.getPublicKey(); // Almacena la clave pública del firmante
+    }
+    // No es necesario actualizar el ID aquí si calculateHash() no incluye firma/pubkey.
+    // Si el ID se actualizara con firma/pubkey, esto causaría un cambio en el ID después de la firma,
+    // lo cual no es el comportamiento estándar en Bitcoin (TxID es estable una vez creado el contenido).
+}
+
+// Verifica todas las firmas en las entradas de la transacción.
+bool Transaction::isValid() const {
+    // 1. Verifica que el ID de la transacción sea correcto.
+    if (id.empty()) {
+        std::cerr << "Error: El ID de la transaccion esta vacio." << std::endl;
+        return false;
+    }
+    if (calculateHash() != id) {
+        std::cerr << "Error: El ID de la transaccion no coincide. Recalculado: " << calculateHash() << ", Almacenado: " << id << std::endl;
+        return false;
+    }
+
+    if (isCoinbase) {
+        // Las transacciones de Coinbase no tienen entradas que verificar (solo outputs).
+        return true;
+    }
+
+    // 2. Para transacciones que no son Coinbase, verifica que tengan entradas.
+    if (inputs.empty()) {
+        std::cerr << "Error: Transaccion no-coinbase no tiene entradas." << std::endl;
+        return false;
+    }
+
+    // 3. Verifica la validez de cada entrada (especialmente la firma).
+    Radix::RandomXHash hashToVerify = getHashForSignature(); // El hash a verificar contra la firma
 
     for (const auto& input : inputs) {
-        if (input.signature.empty() || input.pubKey.empty()) { 
-            std::cerr << "Error: Input con firma o clave publica vacia para verificar." << std::endl;
+        if (input.signature.empty() || input.pubKey.empty()) {
+            std::cerr << "Error: La entrada de transaccion carece de firma o clave publica." << std::endl;
             return false;
         }
-        // Verificar la firma usando KeyPair::verify
-        if (!Radix::KeyPair::verify(input.pubKey, txHashToVerify, input.signature)) { 
-            std::cerr << "Error: Firma invalida para input. TxId: " << Radix::toHexString(this->txId) << std::endl;
-            std::cerr << "  Input: prevTxId=" << Radix::toHexString(input.prevTxId) 
-                      << ", outputIndex=" << input.outputIndex << std::endl;
-            std::cerr << "  PublicKey: " << Radix::toHexString(input.pubKey) << std::endl; 
+
+        // Usa la función estática verify de KeyPair para verificar la firma.
+        if (!Radix::KeyPair::verify(input.pubKey, hashToVerify, input.signature)) {
+            std::cerr << "Error: Firma invalida para input. TxId: " << id << std::endl;
+            std::cerr << "  Input: prevTxId=" << input.prevTxId << ", outputIndex=" << input.outputIndex << std::endl;
+            // toHexString está disponible (de randomx_util.h)
+            std::cerr << "  PublicKey: " << Radix::toHexString(input.pubKey) << std::endl;
             std::cerr << "  Signature: " << Radix::toHexString(input.signature) << std::endl;
             return false;
         }
     }
-    return true;
+    return true; // La transacción es válida
+}
+
+// Convierte el objeto de transacción a una cadena legible para visualización.
+std::string Transaction::toString() const {
+    std::stringstream ss;
+    ss << "Transaction ID: " << id << "\n";
+    ss << "  Is Coinbase: " << (isCoinbase ? "Yes" : "No") << "\n";
+    ss << "  Timestamp: " << timestamp << "\n";
+
+    if (!inputs.empty()) {
+        ss << "  Inputs (" << inputs.size() << "):\n";
+        for (const auto& input : inputs) {
+            ss << "    PrevTxId: " << input.prevTxId << "\n";
+            ss << "    OutputIndex: " << input.outputIndex << "\n";
+            ss << "    Signature: " << Radix::toHexString(input.signature) << "\n";
+            ss << "    PubKey: " << Radix::toHexString(input.pubKey) << "\n";
+        }
+    } else {
+        ss << "  Inputs (0):\n";
+    }
+
+    if (!outputs.empty()) {
+        ss << "  Outputs (" << outputs.size() << "):\n";
+        for (const auto& output : outputs) {
+            ss << "    Amount: " << output.amount << "\n";
+            ss << "    RecipientAddress: " << output.recipientAddress << "\n";
+        }
+    } else {
+        ss << "  Outputs (0):\n";
+    }
+    return ss.str();
+}
+
+// Actualiza el ID de la transacción. Debe llamarse después de que todos los datos
+// esenciales de la transacción (entradas y salidas) estén finalizados y antes de la firma,
+// si el ID se basa solo en el contenido.
+void Transaction::updateId() {
+    id = calculateHash();
 }
 
 } // namespace Radix

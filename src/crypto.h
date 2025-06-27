@@ -1,44 +1,53 @@
+// crypto.h
 #ifndef CRYPTO_H
 #define CRYPTO_H
 
-#include <vector>
 #include <string>
+#include <vector>
 #include <array>
-#include "randomx_util.h" // Para Radix::RandomXHash y Radix::Address
-#include <openssl/ec.h>     // Para EC_KEY
-#include <openssl/obj_mac.h> // Para NID_secp256k1
-#include <openssl/sha.h>    // Para SHA256
-#include <openssl/ripemd.h> // Para RIPEMD160
+#include <cstdint> // Para uint8_t
+
+#include "randomx_util.h" // Para RandomXHash
+
+// OpenSSL Headers para tipos necesarios
+#include <openssl/ec.h>     // Para EC_KEY, EC_GROUP, EC_POINT
+#include <openssl/ecdsa.h>  // Para ECDSA_SIG
 
 namespace Radix {
 
-// Tipo para representar una clave privada (32 bytes)
-using PrivateKey = std::array<uint8_t, 32>;
-// Tipo para representar una clave pública (64 bytes descomprimida, o más si incluye punto 04)
-using PublicKey = std::vector<uint8_t>;
-// Tipo para la firma (DER encoding)
-using Signature = std::vector<uint8_t>;
+// Tipos personalizados para mayor claridad
+using PrivateKey = std::array<uint8_t, 32>; // Clave privada de 32 bytes
+using PublicKey = std::vector<uint8_t>;    // Clave pública (puede ser de 33 o 65 bytes)
+using Signature = std::vector<uint8_t>;    // Firma (formato DER, longitud variable)
 
-// Clase para la gestión de claves y firmas
+// --- Funciones de Utilidad Criptográficas (generales) ---
+std::vector<uint8_t> hash160(const std::vector<uint8_t>& data);
+std::string base58Encode(const std::vector<uint8_t>& data);
+std::vector<uint8_t> base58Decode(const std::string& data);
+
+// Wrapper para SHA256 (global de OpenSSL) en el namespace Radix
+RandomXHash SHA256(const std::string& data);
+RandomXHash SHA256(const std::vector<uint8_t>& data);
+
+
 class KeyPair {
 public:
-    KeyPair(); // Genera un nuevo par de claves aleatorio
-    KeyPair(const PrivateKey& privKey); // Crea un par de claves a partir de una privada existente
+    // Constructor que genera un nuevo par de claves aleatorio
+    KeyPair();
+    // Constructor que usa una clave privada existente
+    KeyPair(const PrivateKey& privKey);
 
-    // Obtiene la clave privada
+    // Getters para las claves y la dirección
     const PrivateKey& getPrivateKey() const { return privateKey; }
-    // Obtiene la clave pública (comprimida o sin comprimir, lo definiremos en la implementación)
     const PublicKey& getPublicKey() const { return publicKey; }
-    // Obtiene la dirección derivada de la clave pública
-    Address getAddress() const { return address; }
+    const Address& getAddress() const { return address; }
 
-    // Firma un mensaje (hash) usando la clave privada
+    // Firma un hash de mensaje con la clave privada
     Signature sign(const RandomXHash& messageHash) const;
-
-    // Verifica una firma usando la clave pública
+    // Verifica una firma con la clave pública
     static bool verify(const PublicKey& pubKey, const RandomXHash& messageHash, const Signature& signature);
 
-    // Deriva una dirección Radix a partir de una clave pública
+    // Deriva una dirección a partir de una clave pública dada
     static Address deriveAddress(const PublicKey& pubKey);
 
 private:
@@ -46,16 +55,13 @@ private:
     PublicKey publicKey;
     Address address;
 
-    // Funciones internas para generación/derivación
+    // Genera un nuevo par de claves EC
     void generateKeys();
+    // Deriva la clave pública a partir de la clave privada
     void derivePublicKey();
+    // Deriva la dirección a partir de la clave pública (internamente)
     void deriveAddressInternal();
 };
-
-// Funciones de utilidad criptográficas
-std::vector<uint8_t> hash160(const std::vector<uint8_t>& data); // SHA256 + RIPEMD160
-std::string base58Encode(const std::vector<uint8_t>& data);
-std::vector<uint8_t> base58Decode(const std::string& data); // Implementación básica, sin checksum
 
 } // namespace Radix
 

@@ -1,53 +1,54 @@
+// block.h
 #ifndef BLOCK_H
 #define BLOCK_H
 
-#include <cstdint>
-#include <vector>
 #include <string>
+#include <vector>
 #include <memory> // Para std::unique_ptr
-#include "transaction.h"
-#include "merkle_tree.h"
-#include "randomx_util.h" // Necesario para RandomXHash y RandomXContext
+#include "transaction.h" // Incluir la clase Transaction (actualizada)
+#include "randomx_util.h" // Para RandomXHash y RandomXContext
 
 namespace Radix {
 
-class RandomXContext; // Declaración adelantada
-
 class Block {
 public:
-    uint32_t version;
-    RandomXHash prevHash;
-    RandomXHash merkleRoot;
-    uint32_t timestamp;
-    uint32_t difficultyTarget;
-    uint64_t nonce;
-    RandomXHash hash;
-    std::vector<Transaction> transactions;
+    int version; // Versión del bloque
+    std::string prevHash; // Hash del bloque anterior en la cadena
+    std::string merkleRoot; // Raíz de Merkle de las transacciones del bloque
+    long long timestamp; // Marca de tiempo del bloque
+    unsigned int difficultyTarget; // Objetivo de dificultad para la minería
+    long long nonce; // Valor de prueba de trabajo
+    std::string hash; // Hash del bloque actual
+    std::vector<Transaction> transactions; // Transacciones contenidas en el bloque (cambiado a vector de objetos Transaction)
 
-    // Constructor
-    Block(uint32_t version, const RandomXHash& prevHash, uint32_t difficultyTarget, const std::vector<std::string>& pendingTxData, Radix::RandomXContext& rxContext);
+    // Constructor del bloque
+    // Ahora toma una referencia constante al RandomXContext
+    Block(int version, std::string prevHash, std::vector<Transaction> transactions, 
+          unsigned int difficultyTarget, const RandomXContext& rxContext_ref);
 
-    // Recompute the block hash
-    RandomXHash calculateHash(RandomXContext& rxContext) const;
+    // Calcula el hash del encabezado del bloque utilizando el algoritmo RandomX.
+    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
+    std::string calculateHash() const;
     
-    // Método para minar el bloque (encuentra el nonce)
-    void mine(RandomXContext& rxContext);
-
-    // Serializa el header del bloque
-    std::vector<uint8_t> serializeHeader() const;
-
-    // Obtener el Merkle Root de las transacciones
-    RandomXHash getMerkleRoot() const;
-
-    // Ahora toString() acepta un RandomXContext
-    std::string toString(Radix::RandomXContext& rxContext) const;
+    // Mina el bloque hasta que se encuentra un hash que cumpla con la dificultad.
+    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
+    void mineBlock(unsigned int difficulty);
+    
+    // Convierte el bloque a una representación de cadena para visualización.
+    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
+    std::string toString() const;
+    
+    // Valida la integridad del bloque (hashes, dificultad, transacciones).
+    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
+    bool isValid() const; 
 
 private:
-    // Helper para serializar las transacciones para el Merkle Tree
-    // NOTA: Esta función privada 'getTransactionHashes' no es estrictamente necesaria
-    // si getMerkleRoot ya itera sobre las transacciones directamente para sus hashes.
-    // La elimino en .cpp, pero la dejo comentada aquí por si en el futuro se quiere usar.
-    // std::vector<RandomXHash> getTransactionHashes(Radix::RandomXContext& rxContext) const;
+    const RandomXContext& rxContext_; // Referencia al contexto RandomX
+
+    // Actualiza la raíz de Merkle basándose en las transacciones actuales del bloque.
+    void updateMerkleRoot();
+    // Comprueba si el hash del bloque cumple con el objetivo de dificultad.
+    bool checkDifficulty(unsigned int difficulty) const;
 };
 
 } // namespace Radix

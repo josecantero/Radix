@@ -1,33 +1,54 @@
+// blockchain.h
 #ifndef BLOCKCHAIN_H
 #define BLOCKCHAIN_H
 
-#include "block.h"
-#include "randomx_util.h" // Necesario para RandomXContext
 #include <vector>
-#include <memory> // Para std::unique_ptr
 #include <string>
+#include <memory> // Para std::unique_ptr
+#include <map>    // Para el balance de cuentas (si se implementa)
+
+#include "block.h"        // Incluir la definición de Block
+#include "transaction.h"  // Incluir la definición de Transaction
+#include "randomx_util.h" // Incluir RandomXContext
 
 namespace Radix {
 
 class Blockchain {
 public:
-    Blockchain(Radix::RandomXContext& rxContext); 
+    // Constructor de la Blockchain
+    // Se requiere la dificultad al inicializar
+    Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext_ref);
 
-    const Block& getLastBlock() const;
-    bool addBlock(std::unique_ptr<Block> block, Radix::RandomXContext& rxContext, const std::vector<std::string>& currentPendingTransactions);
-    std::unique_ptr<Block> mineNewBlock(Radix::RandomXContext& rxContext, const std::vector<std::string>& pendingTxData);
+    // Añade una transacción a las transacciones pendientes
+    void addTransaction(const Radix::Transaction& transaction);
 
-    size_t getChainSize() const; 
+    // Mina las transacciones pendientes y crea un nuevo bloque
+    void minePendingTransactions(const std::string& miningRewardAddress);
+
+    // Obtiene el balance de una dirección específica (implementación básica)
+    double getBalanceOfAddress(const std::string& address) const;
+
+    // Valida la integridad de toda la cadena
+    bool isChainValid() const;
+
+    // Imprime todos los bloques en la cadena
+    void printChain() const;
+
+    // Obtiene el último bloque de la cadena
+    const Block& getLatestBlock() const;
+
+    // Nuevo método: Obtiene el tamaño actual de la cadena (número de bloques)
+    size_t getChainSize() const;
 
 private:
-    std::vector<std::unique_ptr<Block>> chain;
-    uint32_t currentDifficultyTarget;
+    std::vector<Block> chain;
+    std::vector<Transaction> pendingTransactions;
+    unsigned int difficulty;
+    double miningReward;
+    const Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX
 
-    void createGenesisBlock(Radix::RandomXContext& rxContext);
-    void mineBlockInternal(Block& block, Radix::RandomXContext& rxContext);
-    
-    // ¡CAMBIO AQUÍ! Declaración como método privado de la clase
-    bool checkDifficulty(const RandomXHash& hash, uint32_t target) const; 
+    // Crea el bloque génesis
+    Block createGenesisBlock();
 };
 
 } // namespace Radix

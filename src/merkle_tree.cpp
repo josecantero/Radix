@@ -1,21 +1,22 @@
 #include "merkle_tree.h"
-#include "randomx_util.h" // Para RandomXHash, RandomXContext y toHexString
-
 #include <stdexcept>
 #include <iostream>
 #include <sstream>
-#include <iomanip>    // Para std::setw, std::setfill
-#include <cstring>    // Para memcpy (C-style header, provides memcpy in global namespace)
+#include <iomanip> // Para toHexString
+#include <cstring> // Para memcpy
 #include <openssl/sha.h> // Para SHA256 y SHA256_DIGEST_LENGTH
 
 namespace Radix {
 
 // Constructor
-// NOTA IMPORTANTE: El constructor de MerkleTree necesita un RandomXContext para hashear los nodos intermedios.
-// En una implementación robusta, este contexto debería pasarse aquí o la clase debería tener una forma de acceder a él.
-// Para esta corrección inmediata de compilación, el hashing de los nodos internos del árbol (no las hojas)
-// se realizará temporalmente con SHA256 directo, como estaba en el código original que causaba errores.
-// La función `hashPair` sí utiliza `RandomXContext`.
+// NOTA IMPORTANTE: El constructor de MerkleTree necesita un RandomXContext para hashear.
+// La implementación anterior no pasaba uno. Para hacer esto compilable y funcional,
+// MerkleTree debería recibir un RandomXContext en su constructor o en la función getRootHash si es minado.
+// Para esta corrección, asumiré que se pasa un RandomXContext en la construcción
+// o que el hashing de los nodos intermedios se hará con una instancia externa.
+// Para el error actual, usaremos el mismo enfoque de SHA256 directo TEMPORALMENTE
+// para los nodos internos del árbol si no se proporciona un rxContext.
+// Sin embargo, la función hashPair ahora sí requiere rxContext.
 MerkleTree::MerkleTree(const std::vector<RandomXHash>& leaves) {
     if (leaves.empty()) {
         rootHash.fill(0); // Árbol Merkle vacío tiene un hash raíz de ceros
@@ -46,10 +47,9 @@ MerkleTree::MerkleTree(const std::vector<RandomXHash>& leaves) {
             memcpy(combinedHashes.data() + currentLevel[i].size(), currentLevel[i+1].data(), currentLevel[i+1].size());
             
             // Hash la combinación usando SHA256 directamente como un placeholder temporal.
-            // Para una solución robusta y correcta, esta parte debe usar RandomXContext
-            // o el hash de la transacción combinada si MerkleTree no tiene el contexto.
-            unsigned char digest[SHA256_DIGEST_LENGTH]; // SHA256_DIGEST_LENGTH ahora declarado por openssl/sha.h
-            SHA256(combinedHashes.data(), combinedHashes.size(), digest); // SHA256 ahora declarado por openssl/sha.h
+            // Para una solución robusta y correcta, esta parte debe usar RandomXContext.
+            unsigned char digest[SHA256_DIGEST_LENGTH];
+            SHA256(combinedHashes.data(), combinedHashes.size(), digest);
             RandomXHash hashedPair;
             memcpy(hashedPair.data(), digest, SHA256_DIGEST_LENGTH);
             

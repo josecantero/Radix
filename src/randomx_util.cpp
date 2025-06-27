@@ -107,4 +107,32 @@ std::string toHexString(const std::vector<uint8_t>& bytes) {
     return ss.str();
 }
 
+// Implementación de la función para convertir un string hexadecimal a RandomXHash (std::array)
+void fromHexString(const std::string& hexString, RandomXHash& hash) {
+    if (hexString.length() % 2 != 0) {
+        throw std::runtime_error("La cadena hexadecimal tiene una longitud impar.");
+    }
+    if (hexString.length() / 2 != hash.size()) {
+        throw std::runtime_error("La longitud de la cadena hexadecimal no coincide con el tamaño del hash.");
+    }
+
+    for (size_t i = 0; i < hexString.length(); i += 2) {
+        std::string byteString = hexString.substr(i, 2);
+        hash[i / 2] = static_cast<uint8_t>(std::stoul(byteString, nullptr, 16));
+    }
+}
+
+// Implementación de la función para convertir un string hexadecimal a std::vector<uint8_t>
+void fromHexString(const std::string& hexString, std::vector<uint8_t>& bytes) {
+    if (hexString.length() % 2 != 0) {
+        throw std::runtime_error("La cadena hexadecimal tiene una longitud impar.");
+    }
+    bytes.clear();
+    bytes.reserve(hexString.length() / 2); // Pre-reservar espacio para evitar reasignaciones
+    for (size_t i = 0; i < hexString.length(); i += 2) {
+        std::string byteString = hexString.substr(i, 2);
+        bytes.push_back(static_cast<uint8_t>(std::stoul(byteString, nullptr, 16)));
+    }
+}
+
 } // namespace Radix
