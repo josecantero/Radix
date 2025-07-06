@@ -1,54 +1,53 @@
-// block.h
 #ifndef BLOCK_H
 #define BLOCK_H
 
 #include <string>
 #include <vector>
 #include <memory> // Para std::unique_ptr
-#include "transaction.h" // Incluir la clase Transaction (actualizada)
-#include "randomx_util.h" // Para RandomXHash y RandomXContext
+#include <array>  // Para RandomXHash
+#include <map>    // Para std::map en isValid (para el UTXOSet)
+
+#include "transaction.h" // Incluir la clase Transaction
+#include "randomx_util.h" // Para RandomXContext y RandomXHash
 
 namespace Radix {
 
 class Block {
 public:
-    int version; // Versión del bloque
-    std::string prevHash; // Hash del bloque anterior en la cadena
-    std::string merkleRoot; // Raíz de Merkle de las transacciones del bloque
-    long long timestamp; // Marca de tiempo del bloque
-    unsigned int difficultyTarget; // Objetivo de dificultad para la minería
-    long long nonce; // Valor de prueba de trabajo
-    std::string hash; // Hash del bloque actual
-    std::vector<Transaction> transactions; // Transacciones contenidas en el bloque (cambiado a vector de objetos Transaction)
-
     // Constructor del bloque
     // Ahora toma una referencia constante al RandomXContext
-    Block(int version, std::string prevHash, std::vector<Transaction> transactions, 
+    Block(int version, std::string prevHash, std::vector<Radix::Transaction> transactions, 
           unsigned int difficultyTarget, const RandomXContext& rxContext_ref);
 
-    // Calcula el hash del encabezado del bloque utilizando el algoritmo RandomX.
-    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
-    std::string calculateHash() const;
+    int version; // Versión del bloque
+    long long timestamp; // Marca de tiempo de creación del bloque
+    std::string prevHash; // Hash del bloque anterior en la cadena
+    Radix::RandomXHash merkleRoot; // Raíz del árbol Merkle de transacciones
+    unsigned int difficultyTarget; // Objetivo de dificultad para la minería
+    long long nonce; // Valor numérico utilizado para encontrar el hash válido (prueba de trabajo)
+    std::string hash; // Hash del bloque actual
+    std::vector<Radix::Transaction> transactions; // Lista de transacciones incluidas en este bloque
+
+    // Calcula el hash del encabezado del bloque.
+    std::string calculateHash() const; // Ya no necesita rxContext como parámetro, usa la referencia miembro.
+    // Mina el bloque (encuentra un nonce válido).
+    void mineBlock(unsigned int difficulty); // Ya no necesita rxContext como parámetro, usa la referencia miembro.
+    // Comprueba si el hash del bloque cumple con el objetivo de dificultad.
+    bool checkDifficulty(unsigned int difficulty) const;
     
-    // Mina el bloque hasta que se encuentra un hash que cumpla con la dificultad.
-    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
-    void mineBlock(unsigned int difficulty);
-    
+    // Valida la integridad del bloque (hashes, transacciones, etc.)
+    // Ahora recibe el UTXOSet para validar las transacciones internas.
+    // Ya no necesita rxContext como parámetro, usa la referencia miembro.
+    bool isValid(const std::map<std::string, TransactionOutput>& utxoSet) const; 
+
     // Convierte el bloque a una representación de cadena para visualización.
-    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
-    std::string toString() const;
-    
-    // Valida la integridad del bloque (hashes, dificultad, transacciones).
-    // Ya no necesita el rxContext como parámetro, usa la referencia miembro.
-    bool isValid() const; 
+    std::string toString() const; // Ya no necesita rxContext como parámetro, usa la referencia miembro.
 
 private:
     const RandomXContext& rxContext_; // Referencia al contexto RandomX
 
-    // Actualiza la raíz de Merkle basándose en las transacciones actuales del bloque.
-    void updateMerkleRoot();
-    // Comprueba si el hash del bloque cumple con el objetivo de dificultad.
-    bool checkDifficulty(unsigned int difficulty) const;
+    // Actualiza la raíz de Merkle del bloque a partir de sus transacciones.
+    void updateMerkleRoot(); 
 };
 
 } // namespace Radix

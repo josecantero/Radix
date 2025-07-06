@@ -1,3 +1,4 @@
+// main.cpp
 #include "blockchain.h"
 #include "block.h"
 #include "transaction.h"
@@ -34,13 +35,14 @@ int main() {
     try {
         std::cout << "Creando contexto de RandomX (esto puede tardar unos segundos)..." << std::endl << std::flush;
         Radix::RandomXContext rxContext;
-        // initCache e initDataset son llamadas dentro del constructor de RandomXContext.
+        // Inicializar caché y dataset de RandomX
+        rxContext.initCache({}); // Seed vacío por simplicidad
+        rxContext.initDataset();
         
         std::cout << "Contexto de RandomX listo." << std::endl << std::flush;
 
         // Ahora el constructor de Blockchain toma la dificultad y el contexto RandomX
-        // Aumentar la dificultad para que la minería sea más notoria
-        unsigned int blockchain_difficulty = 10; // Ajustado de 4 a 20 para ver el proceso de minería
+        unsigned int blockchain_difficulty = 10; 
         std::cout << "\nInicializando Blockchain con dificultad: " << blockchain_difficulty << std::endl << std::flush;
         Radix::Blockchain blockchain(blockchain_difficulty, rxContext); 
         std::cout << "Blockchain inicializada y Bloque Genesis creado." << std::endl << std::flush;
@@ -65,7 +67,6 @@ int main() {
 
         // Crear un mensaje de prueba para firma
         std::string test_message = "Este es un mensaje de prueba para la firma digital.";
-        // Calcula el hash del mensaje usando la función SHA256 de Radix
         Radix::RandomXHash messageHash = Radix::SHA256(test_message);
 
         std::cout << "\nMensaje original para firmar: \"" << test_message << "\"" << std::endl << std::flush;
@@ -86,65 +87,115 @@ int main() {
         bool isInvalidSignatureValid = Radix::KeyPair::verify(bobKeys.getPublicKey(), messageHash, aliceSignature); 
         std::cout << "  Resultado de la verificacion: " << (isInvalidSignatureValid ? "ERROR! La firma se valido (deberia fallar)." : "FALLO! (Correcto)" ) << std::endl << std::flush;
 
-        // --- Demostración de Transacciones y Minería ---
-        std::cout << "\n--- Demostracion de Transacciones y Mineria ---" << std::endl << std::flush;
+        // --- Demostración de Transacciones y Minería (con UTXO) ---
+        std::cout << "\n--- Demostracion de Transacciones y Mineria (con UTXO) ---" << std::endl << std::flush;
 
-        // Transacción 1: Alice envía 5 RDX a Bob
+        // Para demostrar el UTXO, Alice necesita fondos iniciales.
+        // Simularemos que el Bloque Génesis le da fondos a Alice (esto no es estándar, pero para la demo).
+        // En un sistema real, los fondos iniciales se obtendrían de una transacción coinbase minada.
+        // Para simplificar la demo, vamos a minar un bloque inicial para Alice.
+        std::cout << "\nMinando un bloque inicial para Alice para darle fondos..." << std::endl << std::flush;
+        blockchain.minePendingTransactions(aliceKeys.getAddress()); // Alice mina un bloque (solo con coinbase)
+        std::cout << "Bloque inicial minado para Alice. Balance de Alice: " << blockchain.getBalanceOfAddress(aliceKeys.getAddress()) << " RDX" << std::endl << std::flush;
+        std::cout << "\n--- Informacion del Bloque #" << blockchain.getChainSize() - 1 << " ---" << std::endl << std::flush; 
+        std::cout << blockchain.getLatestBlock().toString() << std::endl << std::flush;
+
+
+        // Transacción 1: Alice envía 5 RDX a Bob.
+        // Alice necesita gastar una UTXO. La UTXO de la coinbase del bloque anterior.
         std::cout << "\nCreando Transaccion 1: Alice envia 5 RDX a Bob." << std::endl << std::flush;
-        Radix::Transaction tx1(false); // No es una transacción de coinbase
-        tx1.inputs.push_back({"prevTxId_simulado_alice", 0, Radix::Signature(), aliceKeys.getPublicKey()}); // Input simulado
-        tx1.outputs.push_back({5, bobKeys.getAddress()}); // Output a Bob
-        tx1.updateId(); // Calcular el ID de la transacción
-        std::cout << "  ID de Transaccion 1 (pre-firma): " << tx1.id << std::endl << std::flush;
+        
+        // Asumimos que la coinbase de Alice es la única UTXO que tiene.
+        // Necesitamos el ID de la transacción coinbase del último bloque minado por Alice.
+        // La coinbase es la primera transacción en el bloque.
+        const Radix::Block& lastBlock = blockchain.getLatestBlock();
+        if (lastBlock.transactions.empty() || !lastBlock.transactions[0].isCoinbase) {
+             throw std::runtime_error("El ultimo bloque no contiene una transaccion coinbase esperada.");
+        }
+        std::string aliceCoinbaseTxId = lastBlock.transactions[0].id;
+        
+        std::vector<Radix::TransactionInput> tx1_inputs;
+        // Referencia a la UTXO de la coinbase de Alice (ID de la coinbase, índice 0)
+        tx1_inputs.push_back({aliceCoinbaseTxId, 0, Radix::Signature(), aliceKeys.getPublicKey()}); 
+
+        std::vector<Radix::TransactionOutput> tx1_outputs;
+        tx1_outputs.push_back({5, bobKeys.getAddress()}); // 5 RDX a Bob
+        // Calculamos el cambio para Alice. Asumiendo que la coinbase fue de 100 RDX.
+        // En un sistema real, se buscarían UTXOs que sumen al menos el monto a enviar.
+        double changeAmount = 100 - 5; // 100 - 5 = 95 RDX (CORREGIDO: Acceso directo al valor de la recompensa)
+        if (changeAmount > 0) {
+            tx1_outputs.push_back({changeAmount, aliceKeys.getAddress()}); // Cambio de vuelta a Alice
+        }
+
+        Radix::Transaction tx1(tx1_inputs, tx1_outputs); // Usa el nuevo constructor de UTXO
         tx1.sign(aliceKeys); // Alice firma la transacción
         std::cout << "  Transaccion 1 firmada por Alice. ID: " << tx1.id << std::endl << std::flush;
         blockchain.addTransaction(tx1);
         std::cout << "  Transaccion 1 anadida a la piscina de transacciones pendientes." << std::endl << std::flush;
         
         // Minar el primer bloque con la transacción de Alice
-        std::cout << "\nIniciando mineria del primer bloque. Minero: " << aliceKeys.getAddress() << std::endl << std::flush;
-        // minePendingTransactions() ya no necesita rxContext como argumento
-        blockchain.minePendingTransactions(aliceKeys.getAddress()); 
+        std::cout << "\nIniciando mineria del primer bloque. Minero: " << bobKeys.getAddress() << std::endl << std::flush;
+        blockchain.minePendingTransactions(bobKeys.getAddress()); // Bob mina el bloque
         std::cout << "Primer bloque minado y anadido a la cadena." << std::endl << std::flush;
         std::cout << "\n--- Informacion del Bloque #" << blockchain.getChainSize() - 1 << " ---" << std::endl << std::flush; 
-        // toString() ya no necesita rxContext como argumento
         std::cout << blockchain.getLatestBlock().toString() << std::endl << std::flush;
 
-
-        // Transacción 2: Bob envía 2 RDX a Alice
+        // Transacción 2: Bob envía 2 RDX a Alice.
+        // Bob necesita gastar una UTXO. La UTXO que recibió de Alice en tx1.
         std::cout << "\nCreando Transaccion 2: Bob envia 2 RDX a Alice." << std::endl << std::flush;
-        Radix::Transaction tx2(false); // No es una transacción de coinbase
-        tx2.inputs.push_back({"prevTxId_simulado_bob", 0, Radix::Signature(), bobKeys.getPublicKey()}); // Input simulado
-        tx2.outputs.push_back({2, aliceKeys.getAddress()}); // Output a Alice
-        tx2.updateId(); // Calcular el ID de la transacción
-        std::cout << "  ID de Transaccion 2 (pre-firma): " << tx2.id << std::endl << std::flush;
+
+        // Buscar la UTXO que Bob recibió de Alice en tx1
+        // La transacción tx1 fue la segunda en el bloque anterior (índice 1, después de la coinbase de Bob).
+        const Radix::Block& prevBlock = blockchain.getLatestBlock();
+        if (prevBlock.transactions.size() < 2) {
+            throw std::runtime_error("El bloque anterior no contiene suficientes transacciones para la demo.");
+        }
+        const Radix::Transaction& tx1_in_block = prevBlock.transactions[1]; // Suponemos que tx1 es la segunda transacción
+        std::string bobReceivedTxId = tx1_in_block.id;
+        // Bob recibió 5 RDX de Alice, esa es la salida de tx1_in_block con índice 0 (si no hay cambio a Alice)
+        // Ojo: si tx1_outputs tenía cambio, la salida de Bob sería la primera (índice 0).
+        // Si tx1_outputs sólo tenía una salida a Bob, entonces el índice es 0.
+        // Si tx1_outputs tenía una salida a Bob y una de cambio a Alice, la salida a Bob es outputs[0].
+        // Validamos que sea la UTXO de Bob.
+        if (tx1_in_block.outputs.empty() || tx1_in_block.outputs[0].recipientAddress != bobKeys.getAddress()) {
+             throw std::runtime_error("La transaccion 1 en el bloque no contiene la UTXO esperada para Bob.");
+        }
+        
+        std::vector<Radix::TransactionInput> tx2_inputs;
+        tx2_inputs.push_back({bobReceivedTxId, 0, Radix::Signature(), bobKeys.getPublicKey()}); // Gasta la UTXO de 5 RDX de Bob
+
+        std::vector<Radix::TransactionOutput> tx2_outputs;
+        tx2_outputs.push_back({2, aliceKeys.getAddress()}); // 2 RDX a Alice
+        // Cambio para Bob: 5 RDX (recibido) - 2 RDX (enviado) = 3 RDX
+        double bobChangeAmount = 5 - 2; 
+        if (bobChangeAmount > 0) {
+            tx2_outputs.push_back({bobChangeAmount, bobKeys.getAddress()}); // Cambio de vuelta a Bob
+        }
+
+        Radix::Transaction tx2(tx2_inputs, tx2_outputs); // Usa el nuevo constructor de UTXO
         tx2.sign(bobKeys); // Bob firma la transacción
         std::cout << "  Transaccion 2 firmada por Bob. ID: " << tx2.id << std::endl << std::flush;
         blockchain.addTransaction(tx2);
         std::cout << "  Transaccion 2 anadida a la piscina de transacciones pendientes." << std::endl << std::flush;
 
         // Minar el segundo bloque con la transacción de Bob
-        std::cout << "\nIniciando mineria del segundo bloque. Minero: " << bobKeys.getAddress() << std::endl << std::flush;
-        // minePendingTransactions() ya no necesita rxContext como argumento
-        blockchain.minePendingTransactions(bobKeys.getAddress());
+        std::cout << "\nIniciando mineria del segundo bloque. Minero: " << aliceKeys.getAddress() << std::endl << std::flush;
+        blockchain.minePendingTransactions(aliceKeys.getAddress()); // Alice mina el bloque
         std::cout << "Segundo bloque minado y anadido a la cadena." << std::endl << std::flush;
         std::cout << "\n--- Informacion del Bloque #" << blockchain.getChainSize() - 1 << " ---" << std::endl << std::flush; 
-        // toString() ya no necesita rxContext como argumento
         std::cout << blockchain.getLatestBlock().toString() << std::endl << std::flush;
 
         std::cout << "\n--- Estado Final de la Blockchain ---" << std::endl << std::flush;
-        // printChain() ya no necesita rxContext como argumento
         blockchain.printChain();
 
         std::cout << "\nValidando la integridad de toda la Blockchain..." << std::endl << std::flush;
-        // isChainValid() ya no necesita rxContext como argumento
         if (blockchain.isChainValid()) {
             std::cout << "La Blockchain es VALIDA! Todos los bloques y hashes son correctos." << std::endl << std::flush;
         } else {
             std::cout << "La Blockchain es INVALIDA! Se detectaron inconsistencias." << std::endl << std::flush;
         }
 
-        // Mostrar balances
+        // Mostrar balances (ahora usan el UTXOSet)
         std::cout << "\n--- Balances Finales ---" << std::endl << std::flush;
         std::cout << "Balance de Alice: " << blockchain.getBalanceOfAddress(aliceKeys.getAddress()) << " RDX" << std::endl << std::flush;
         std::cout << "Balance de Bob: " << blockchain.getBalanceOfAddress(bobKeys.getAddress()) << " RDX" << std::endl << std::flush;
