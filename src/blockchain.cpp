@@ -1,3 +1,4 @@
+// blockchain.cpp
 #include "blockchain.h"
 #include "block.h"
 #include "transaction.h"
@@ -8,6 +9,7 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm> // Para std::all_of
+#include <stdexcept> // Para std::runtime_error
 
 namespace Radix {
 
@@ -17,25 +19,28 @@ Blockchain::Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext
     // Crea el bloque génesis al iniciar la blockchain
     Block genesisBlock = createGenesisBlock();
     chain.push_back(genesisBlock);
-    // El bloque génesis no tiene inputs, solo outputs (si los tiene, como una coinbase inicial, aunque no es lo común)
-    // Se aplica el bloque génesis al UTXOSet inicial.
-    applyBlockToUTXOSet(genesisBlock, utxoSet);
+    applyBlockTransactionsToUtxoSet(genesisBlock, utxoSet); // Procesa las transacciones del bloque génesis para inicializar el UTXOSet
+    std::cout << "Blockchain inicializada y Bloque Genesis creado." << std::endl;
 }
 
 // Crea el bloque génesis (el primer bloque de la cadena)
 Block Blockchain::createGenesisBlock() {
     // El bloque génesis no tiene transacciones previas ni prevHash
-    // La raíz de Merkle se calculará como el hash de un vector vacío de transacciones inicialmente
     std::vector<Transaction> genesisTransactions;
-    // El bloque génesis no tiene una transacción coinbase tradicional.
-    // Si quisieras darle un "suministro inicial", podrías añadir una TransactionOutput aquí
-    // sin un TransactionInput, pero no sería una coinbase minada.
-    // Por ahora, lo dejamos sin transacciones.
+    
+    // Transacción coinbase para el bloque génesis (recompensa inicial a una dirección arbitraria)
+    // Usaremos la dirección de Alice (o cualquier otra) como la dirección de recompensa inicial para el Génesis.
+    // Para este ejemplo, solo crearemos una transacción coinbase simple.
+    // En una aplicación real, el bloque génesis puede tener una transacción coinbase predefinida.
+    Transaction genesisCoinbaseTx("genesis_miner_address", miningReward, true); // Es una coinbase
+    // El ID de la transacción y el UTXO ID de la salida se establecerán en el constructor de Transaction.
+    genesisTransactions.push_back(genesisCoinbaseTx);
+
+    // FIX: Add rxContext_ as the 5th argument to Block constructor
     Block genesisBlock(1, "0000000000000000000000000000000000000000000000000000000000000000",
-                       genesisTransactions, difficulty, rxContext_); // Pasa rxContext_
-    // El hash inicial se calculará dentro del constructor del bloque.
-    // Aunque el genesis no necesita minarse con dificultad real, lo pasamos por la función de hash para consistencia.
-    // No llamamos a mineBlock aquí porque el genesis no requiere prueba de trabajo.
+                       genesisTransactions, difficulty, rxContext_); // Pasa rxContext_ aquí
+    
+    // FIX: Call calculateHash() without rxContext_ argument
     genesisBlock.hash = genesisBlock.calculateHash(); // Llama a la función sin argumento
     return genesisBlock;
 }
@@ -45,25 +50,25 @@ const Block& Blockchain::getLatestBlock() const {
     return chain.back();
 }
 
-// Nuevo método: Obtiene el tamaño actual de la cadena (número de bloques)
+// Obtiene el tamaño actual de la cadena (número de bloques)
 size_t Blockchain::getChainSize() const {
     return chain.size();
 }
 
 // Añade una transacción a las transacciones pendientes
 void Blockchain::addTransaction(const Radix::Transaction& transaction) {
-    if (transaction.isCoinbase) {
-        throw std::runtime_error("No se puede añadir una transaccion coinbase a la lista de transacciones pendientes directamente. Se crea durante la mineria.");
-    }
-
-    // Validar la transacción preliminarmente contra el UTXOSet actual
-    if (!transaction.isValid(utxoSet)) {
-        throw std::runtime_error("Transaccion invalida (doble gasto o UTXO inexistente/gastada) o firma incorrecta. No se añade a pendientes.");
+    // Para una blockchain real, aquí se añadirían muchas más validaciones de transacciones.
+    // Por ahora, solo verificamos que no sea nula y que sea válida en sí misma.
+    // La validación ahora requiere el UTXOSet.
+    if (!transaction.isValid(utxoSet)) { // Pasa el UTXOSet para la validación
+        throw std::runtime_error("No se puede añadir transaccion invalida a las transacciones pendientes.");
     }
     
-    // Aquí se podrían añadir más validaciones, como verificar que no haya doble gasto
-    // dentro del pool de transacciones pendientes antes de minar. Por ahora, asumimos
-    // que isValid() es suficiente para la validación de UTXO.
+    // Una transacción coinbase no debería ser añadida a pendingTransactions
+    // directamente a través de addTransaction, ya que se crea durante minePendingTransactions.
+    if (transaction.isCoinbase) {
+        throw std::runtime_error("No se puede añadir una transaccion coinbase a la lista de transacciones pendientes.");
+    }
 
     pendingTransactions.push_back(transaction);
     std::cout << "Transaccion añadida a pendientes: " << transaction.id << std::endl;
@@ -71,113 +76,82 @@ void Blockchain::addTransaction(const Radix::Transaction& transaction) {
 
 // Mina las transacciones pendientes y crea un nuevo bloque
 void Blockchain::minePendingTransactions(const std::string& miningRewardAddress) {
-    if (pendingTransactions.empty()) {
+    // Si no hay transacciones pendientes, no se mina un bloque (excepto el génesis)
+    if (pendingTransactions.empty() && chain.size() > 1) { // Si no es el bloque génesis y no hay transacciones
         std::cout << "No hay transacciones pendientes para minar." << std::endl;
-        // Si no hay transacciones pendientes, aún se puede minar un bloque vacío (solo con coinbase).
-        // Esto es un diseño de protocolo, algunos permiten bloques vacíos, otros no.
-        // Para este ejemplo, permitiremos bloques con solo la coinbase.
+        return;
     }
 
     // Crear la transacción de recompensa de minería (coinbase)
-    Transaction coinbaseTx(miningRewardAddress, miningReward, true); // Usa el constructor de coinbase
-    
+    Transaction coinbaseTx(miningRewardAddress, miningReward, true); // Es una coinbase
+
+    // Añadirla al principio de las transacciones pendientes para que sea la primera en el bloque.
     std::vector<Transaction> transactionsForBlock = pendingTransactions;
-    transactionsForBlock.insert(transactionsForBlock.begin(), coinbaseTx); // La coinbase siempre es la primera
+    transactionsForBlock.insert(transactionsForBlock.begin(), coinbaseTx);
 
     // Crear el nuevo bloque con las transacciones pendientes
-    Block newBlock(getLatestBlock().version + 1, getLatestBlock().hash, transactionsForBlock, difficulty, rxContext_);
+    // FIX: Add rxContext_ as the 5th argument to Block constructor
+    Block newBlock(getLatestBlock().version + 1, getLatestBlock().hash, transactionsForBlock, difficulty, rxContext_); // Pasa rxContext_ aquí
     
     // Minar el bloque
-    newBlock.mineBlock(difficulty);
-
-    // Antes de añadir el bloque, validarlo contra el UTXOSet actual
-    // Esto es crucial para asegurar que el bloque minado no contiene transacciones inválidas
-    // que podrían haber sido añadidas al pool antes de que se gastaran sus UTXO.
-    // Para la validación final, es mejor crear una copia temporal del UTXOSet
-    // y aplicar el bloque a esa copia. Si la validación falla, no se añade el bloque.
-    UTXOSet tempUtxoSet = utxoSet; // Crea una copia del UTXOSet actual
-    if (!newBlock.isValid(tempUtxoSet)) { // Pasa la copia para la validación del bloque
-        std::cerr << "Error: El bloque minado es invalido. No se añadira a la cadena." << std::endl;
-        // Las transacciones pendientes que eran válidas pero no se minaron
-        // debido a un bloque inválido, permanecerán en pendingTransactions.
-        return;
-    }
-
-    // Si el bloque es válido, aplicar sus transacciones al UTXOSet principal
-    // (esto ya se hizo en la validación, pero se debe confirmar la actualización)
-    // La función applyBlockToUTXOSet se encarga de esto.
-    if (!applyBlockToUTXOSet(newBlock, utxoSet)) {
-        std::cerr << "Error critico: Fallo al aplicar el bloque valido al UTXOSet. Posible inconsistencia." << std::endl;
-        return;
+    // FIX: Call mineBlock() without rxContext_ argument
+    newBlock.mineBlock(difficulty); // Llama a la función sin argumento
+    
+    // Validar el bloque antes de añadirlo a la cadena
+    // FIX: Pass utxoSet to isValid()
+    if (!newBlock.isValid(utxoSet)) { // Pasa el UTXOSet
+        throw std::runtime_error("El bloque minado no es valido y no se puede añadir a la cadena.");
     }
 
     // Añadir el bloque minado a la cadena
     chain.push_back(newBlock);
+    
+    // Procesar las transacciones del bloque para actualizar el UTXOSet
+    applyBlockTransactionsToUtxoSet(newBlock, utxoSet); // Update the member utxoSet
 
-    // Limpiar las transacciones pendientes que fueron incluidas en el bloque
-    pendingTransactions.clear(); // Se asume que todas las transacciones pendientes fueron incluidas
+    // Limpiar las transacciones pendientes
+    pendingTransactions.clear();
     std::cout << "Bloque minado y añadido a la cadena. Transacciones pendientes limpiadas." << std::endl;
 }
 
-// Aplica las transacciones de un bloque al UTXOSet.
-// Esto implica eliminar las UTXO gastadas y añadir las nuevas UTXO creadas.
-bool Blockchain::applyBlockToUTXOSet(const Block& block, UTXOSet& currentUtxoSet) const {
-    for (const auto& tx : block.transactions) {
-        if (!tx.isCoinbase) { // Las transacciones coinbase no gastan UTXO
-            // Eliminar UTXO gastadas
-            for (const auto& input : tx.inputs) {
-                std::string utxoKey = input.prevTxId + ":" + std::to_string(input.outputIndex);
-                if (currentUtxoSet.count(utxoKey) == 0) {
-                    // Esto no debería suceder si el bloque ya fue validado,
-                    // pero es una salvaguarda.
-                    std::cerr << "Error al aplicar bloque al UTXOSet: UTXO gastada ya no existe: " << utxoKey << std::endl;
-                    return false; // Indica un fallo crítico al aplicar el bloque
-                }
-                currentUtxoSet.erase(utxoKey);
-            }
-        }
-
-        // Añadir nuevas UTXO (outputs de la transacción)
-        for (const auto& output : tx.outputs) {
-            // El utxoId ya debería estar establecido en la transacción.
-            // Si no lo está, se puede generar aquí: tx.id + ":" + std::to_string(output_index)
-            // Asegurarse de que el utxoId en TransactionOutput se haya actualizado correctamente.
-            currentUtxoSet[output.utxoId] = output;
-        }
-    }
-    return true;
-}
-
-
-// Obtiene el balance de una dirección específica utilizando el UTXOSet.
+// Obtiene el balance de una dirección específica utilizando el UTXOSet
 double Blockchain::getBalanceOfAddress(const std::string& address) const {
     double balance = 0;
     for (const auto& pair : utxoSet) {
-        const TransactionOutput& utxo = pair.second;
-        if (utxo.recipientAddress == address) {
-            balance += utxo.amount;
+        if (pair.second.recipientAddress == address) {
+            balance += pair.second.amount;
         }
     }
     return balance;
 }
 
-// Valida la integridad de toda la cadena, reconstruyendo el UTXOSet en el proceso.
-bool Blockchain::isChainValid() const {
-    // Crear un UTXOSet temporal para reconstruir el estado durante la validación
-    UTXOSet tempUtxoSet;
+// Nuevo método para obtener las UTXOs de una dirección específica
+std::vector<TransactionOutput> Blockchain::getUTXOsForAddress(const std::string& address) const {
+    std::vector<TransactionOutput> utxos;
+    for (const auto& pair : utxoSet) {
+        if (pair.second.recipientAddress == address) {
+            utxos.push_back(pair.second);
+        }
+        // Debugging: Mostrar todas las UTXOs y sus propietarios
+        // std::cerr << "DEBUG: UTXO ID: " << pair.first << ", Recipient: " << pair.second.recipientAddress << ", Amount: " << pair.second.amount << std::endl;
+    }
+    return utxos;
+}
 
-    // El bloque génesis (índice 0) tiene un tratamiento especial para su validez.
-    // Se valida su integridad interna y se aplica al UTXOSet.
-    if (!chain[0].isValid(tempUtxoSet)) { // Pasa el UTXOSet vacío para el génesis
+// Valida la integridad de toda la cadena
+bool Blockchain::isChainValid() const {
+    // Iniciar un UTXO set simulado para la validación de la cadena.
+    std::map<std::string, TransactionOutput> simulatedUtxoSet;
+
+    // Aplicar las transacciones del bloque génesis al UTXO set simulado
+    // El bloque génesis no necesita validación de UTXO de entrada ya que no tiene.
+    // Su validez se basa en su estructura interna y el hash.
+    const Block& genesisBlock = chain[0];
+    if (!genesisBlock.isValid(simulatedUtxoSet)) { // Validar el génesis (no necesita UTXOs previas)
         std::cerr << "Cadena Invalida: El bloque genesis no es valido (fallo en consistencia interna)." << std::endl;
         return false;
     }
-    // Aplicar el bloque génesis al UTXOSet temporal
-    if (!applyBlockToUTXOSet(chain[0], tempUtxoSet)) {
-        std::cerr << "Cadena Invalida: Fallo al aplicar el bloque genesis al UTXOSet." << std::endl;
-        return false;
-    }
-
+    applyBlockTransactionsToUtxoSet(genesisBlock, simulatedUtxoSet); // Aplicar transacciones del génesis
 
     // Iterar desde el segundo bloque (índice 1) hasta el final
     for (size_t i = 1; i < chain.size(); ++i) {
@@ -193,18 +167,15 @@ bool Blockchain::isChainValid() const {
             return false;
         }
 
-        // 2. Validar el bloque actual contra el UTXOSet *actual* (antes de aplicar este bloque)
-        // Esto asegura que las transacciones en currentBlock son válidas con los fondos disponibles hasta previousBlock.
-        if (!currentBlock.isValid(tempUtxoSet)) { // Pasa el UTXOSet acumulado hasta el bloque anterior
-            std::cerr << "Cadena Invalida: El bloque en el indice " << i << " no es valido (fallo en hash/dificultad/transacciones/UTXO)." << std::endl;
+        // 2. Validar el bloque actual (su propio hash, dificultad y transacciones)
+        // Se valida contra el simulatedUtxoSet acumulado hasta este punto.
+        if (!currentBlock.isValid(simulatedUtxoSet)) {
+            std::cerr << "Cadena Invalida: El bloque en el indice " << i << " no es valido (fallo en hash/dificultad/transacciones)." << std::endl;
             return false;
         }
 
-        // 3. Aplicar las transacciones de este bloque al UTXOSet temporal para el siguiente bloque
-        if (!applyBlockToUTXOSet(currentBlock, tempUtxoSet)) {
-            std::cerr << "Cadena Invalida: Fallo al aplicar el bloque " << i << " al UTXOSet." << std::endl;
-            return false;
-        }
+        // 3. Si el bloque es válido, aplicar sus transacciones al UTXO set simulado para el siguiente bloque
+        applyBlockTransactionsToUtxoSet(currentBlock, simulatedUtxoSet);
     }
 
     return true; // Si todo es válido, la cadena es válida
@@ -214,7 +185,35 @@ bool Blockchain::isChainValid() const {
 void Blockchain::printChain() const {
     for (size_t i = 0; i < chain.size(); ++i) {
         std::cout << "\n--- Bloque #" << i << " ---\n";
-        std::cout << chain[i].toString() << std::endl;
+        // FIX: Call toString() without rxContext_ argument
+        std::cout << chain[i].toString() << std::endl; // Llama a la función sin argumento
+    }
+}
+
+// Helper para procesar transacciones de un bloque y actualizar un UTXOSet dado.
+// Esta función es estática porque no necesita acceder a los miembros de la instancia de Blockchain.
+void Blockchain::applyBlockTransactionsToUtxoSet(const Block& block, std::map<std::string, TransactionOutput>& targetUtxoSet) {
+    for (const auto& tx : block.transactions) {
+        // Eliminar UTXOs gastadas
+        if (!tx.isCoinbase) {
+            for (const auto& input : tx.inputs) {
+                std::string utxoKey = input.prevTxId + ":" + std::to_string(input.outputIndex);
+                if (targetUtxoSet.count(utxoKey)) {
+                    targetUtxoSet.erase(utxoKey); // Elimina la UTXO gastada
+                } else {
+                    // Esto no debería pasar si la validación del bloque fue exitosa.
+                    // Podría indicar un doble gasto o una UTXO inexistente.
+                    std::cerr << "Advertencia: UTXO de entrada no encontrada en UTXOSet durante el procesamiento del bloque: " << utxoKey << std::endl;
+                }
+            }
+        }
+
+        // Añadir nuevas UTXOs (salidas de la transacción)
+        for (size_t i = 0; i < tx.outputs.size(); ++i) {
+            TransactionOutput newOutput = tx.outputs[i];
+            newOutput.utxoId = tx.id + ":" + std::to_string(i); // Genera el UTXO ID
+            targetUtxoSet[newOutput.utxoId] = newOutput; // Añade la nueva UTXO
+        }
     }
 }
 

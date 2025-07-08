@@ -1,10 +1,10 @@
 #include "randomx_util.h"
-#include <randomx.h>     // Asegúrate de que randomx.h esté incluido
-#include <iomanip>       // Para std::hex, std::setw
-#include <sstream>       // Para std::stringstream
-#include <stdexcept>     // Para std::runtime_error
-#include <vector>        // Para std::vector
-#include <cstring>       // Para memcpy si es necesario
+#include <randomx.h>     // Make sure randomx.h is included
+#include <iomanip>       // For std::hex, std::setw
+#include <sstream>       // For std::stringstream
+#include <stdexcept>     // For std::runtime_error
+#include <vector>        // For std::vector
+#include <cstring>       // For memcpy if necessary
 
 namespace Radix {
 
@@ -26,7 +26,7 @@ RandomXContext::RandomXContext() : flags(RANDOMX_FLAG_DEFAULT), vm(nullptr), cac
     }
 
     // Allocate the VM (virtual machine)
-    // Orden de argumentos de randomx_create_vm ya estaba corregido
+    // Order of randomx_create_vm arguments was already corrected
     vm = randomx_create_vm(flags, cache, dataset);
     if (!vm) {
         randomx_release_dataset(dataset);
@@ -35,7 +35,7 @@ RandomXContext::RandomXContext() : flags(RANDOMX_FLAG_DEFAULT), vm(nullptr), cac
     }
 }
 
-// Implementación del método initCache
+// Implementation of initCache method
 void RandomXContext::initCache(const std::vector<uint8_t>& seed) {
     if (!cache) {
         throw std::runtime_error("RandomX cache not allocated or initialized.");
@@ -43,7 +43,7 @@ void RandomXContext::initCache(const std::vector<uint8_t>& seed) {
     randomx_init_cache(cache, seed.data(), seed.size());
 }
 
-// Implementación del método initDataset
+// Implementation of initDataset method
 void RandomXContext::initDataset() {
     if (!dataset || !cache) {
         throw std::runtime_error("RandomX dataset or cache not allocated or initialized.");
@@ -58,7 +58,7 @@ void RandomXContext::initDataset() {
 RandomXContext::~RandomXContext() {
     if (vm) {
         randomx_destroy_vm(vm);
-        vm = nullptr; // Buenas prácticas: establece el puntero a nullptr después de liberarlo
+        vm = nullptr; // Good practice: set pointer to nullptr after freeing
     }
     if (dataset) {
         randomx_release_dataset(dataset);
@@ -70,7 +70,7 @@ RandomXContext::~RandomXContext() {
     }
 }
 
-// Implementación del método hash para std::vector<uint8_t>
+// Implementation of hash method for std::vector<uint8_t>
 RandomXHash RandomXContext::hash(const std::vector<uint8_t>& data) const {
     if (!vm) {
         throw std::runtime_error("RandomX VM not initialized.");
@@ -80,14 +80,14 @@ RandomXHash RandomXContext::hash(const std::vector<uint8_t>& data) const {
     return result;
 }
 
-// Implementación del método hash para std::string (sobrecarga)
+// Implementation of hash method for std::string (overload)
 RandomXHash RandomXContext::hash(const std::string& data) const {
-    // Convierte el string a std::vector<uint8_t> y luego calcula el hash
+    // Convert string to std::vector<uint8_t> and then calculate hash
     std::vector<uint8_t> data_vec(data.begin(), data.end());
-    return hash(data_vec); // Llama a la otra sobrecarga
+    return hash(data_vec); // Call the other overload
 }
 
-// Función de utilidad para convertir un hash RandomX a una cadena hexadecimal.
+// Utility function to convert a RandomX hash to a hexadecimal string.
 std::string toHexString(const RandomXHash& hash) {
     std::stringstream ss;
     ss << std::hex << std::setfill('0');
@@ -97,7 +97,7 @@ std::string toHexString(const RandomXHash& hash) {
     return ss.str();
 }
 
-// Función de utilidad para convertir un vector de bytes a una cadena hexadecimal.
+// Utility function to convert a byte vector to a hexadecimal string.
 std::string toHexString(const std::vector<uint8_t>& bytes) {
     std::stringstream ss;
     ss << std::hex << std::setfill('0');
@@ -107,31 +107,24 @@ std::string toHexString(const std::vector<uint8_t>& bytes) {
     return ss.str();
 }
 
-// Implementación de la función para convertir un string hexadecimal a RandomXHash (std::array)
+// Implementation of fromHexString for RandomXHash
 void fromHexString(const std::string& hexString, RandomXHash& hash) {
-    if (hexString.length() % 2 != 0) {
-        throw std::runtime_error("La cadena hexadecimal tiene una longitud impar.");
+    if (hexString.length() != hash.size() * 2) {
+        throw std::runtime_error("Hex string length does not match RandomXHash size.");
     }
-    if (hexString.length() / 2 != hash.size()) {
-        throw std::runtime_error("La longitud de la cadena hexadecimal no coincide con el tamaño del hash.");
-    }
-
-    for (size_t i = 0; i < hexString.length(); i += 2) {
-        std::string byteString = hexString.substr(i, 2);
-        hash[i / 2] = static_cast<uint8_t>(std::stoul(byteString, nullptr, 16));
+    for (size_t i = 0; i < hash.size(); ++i) {
+        hash[i] = static_cast<uint8_t>(std::stoul(hexString.substr(i * 2, 2), nullptr, 16));
     }
 }
 
-// Implementación de la función para convertir un string hexadecimal a std::vector<uint8_t>
+// Implementation of fromHexString for std::vector<uint8_t>
 void fromHexString(const std::string& hexString, std::vector<uint8_t>& bytes) {
     if (hexString.length() % 2 != 0) {
-        throw std::runtime_error("La cadena hexadecimal tiene una longitud impar.");
+        throw std::runtime_error("Hex string has odd length.");
     }
-    bytes.clear();
-    bytes.reserve(hexString.length() / 2); // Pre-reservar espacio para evitar reasignaciones
-    for (size_t i = 0; i < hexString.length(); i += 2) {
-        std::string byteString = hexString.substr(i, 2);
-        bytes.push_back(static_cast<uint8_t>(std::stoul(byteString, nullptr, 16)));
+    bytes.resize(hexString.length() / 2);
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        bytes[i] = static_cast<uint8_t>(std::stoul(hexString.substr(i * 2, 2), nullptr, 16));
     }
 }
 

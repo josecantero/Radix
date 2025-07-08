@@ -1,3 +1,4 @@
+// block.h
 #ifndef BLOCK_H
 #define BLOCK_H
 
@@ -5,7 +6,7 @@
 #include <vector>
 #include <memory> // Para std::unique_ptr
 #include <array>  // Para RandomXHash
-#include <map>    // Para std::map en isValid (para el UTXOSet)
+#include <map>    // Para std::map en isValid
 
 #include "transaction.h" // Incluir la clase Transaction
 #include "randomx_util.h" // Para RandomXContext y RandomXHash
@@ -15,9 +16,8 @@ namespace Radix {
 class Block {
 public:
     // Constructor del bloque
-    // Ahora toma una referencia constante al RandomXContext
     Block(int version, std::string prevHash, std::vector<Radix::Transaction> transactions, 
-          unsigned int difficultyTarget, const RandomXContext& rxContext_ref);
+          unsigned int difficultyTarget, const RandomXContext& rxContext_ref); // Añadido rxContext_ref
 
     int version; // Versión del bloque
     long long timestamp; // Marca de tiempo de creación del bloque
@@ -34,12 +34,9 @@ public:
     void mineBlock(unsigned int difficulty); // Ya no necesita rxContext como parámetro, usa la referencia miembro.
     // Comprueba si el hash del bloque cumple con el objetivo de dificultad.
     bool checkDifficulty(unsigned int difficulty) const;
-    
-    // Valida la integridad del bloque (hashes, transacciones, etc.)
-    // Ahora recibe el UTXOSet para validar las transacciones internas.
-    // Ya no necesita rxContext como parámetro, usa la referencia miembro.
+    // Valida la integridad del bloque (hashes, transacciones, etc.).
+    // Ahora toma el UTXOSet para validar las transacciones.
     bool isValid(const std::map<std::string, TransactionOutput>& utxoSet) const; 
-
     // Convierte el bloque a una representación de cadena para visualización.
     std::string toString() const; // Ya no necesita rxContext como parámetro, usa la referencia miembro.
 

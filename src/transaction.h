@@ -66,6 +66,11 @@ public:
     std::vector<TransactionInput> inputs; // Entradas de la transacción
     std::vector<TransactionOutput> outputs; // Salidas de la transacción
 
+    // NOTA: senderAddress y senderPubKey ahora se derivan de los inputs
+    // y se usan internamente para la lógica de firma/validación.
+    // No son miembros directos que se inicialicen desde el constructor principal
+    // para evitar redundancia y mantener el modelo UTXO puro.
+
     // --- Métodos de la transacción ---
     // Calcula el hash de la transacción (TxID).
     std::string calculateHash() const;

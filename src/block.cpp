@@ -12,9 +12,9 @@
 namespace Radix {
 
 // Constructor del bloque
-Block::Block(int version, std::string prevHash, std::vector<Transaction> transactions,
+Block::Block(int version, std::string prevHash, std::vector<Transaction> transactions, 
              unsigned int difficultyTarget, const RandomXContext& rxContext_ref)
-    : version(version), prevHash(prevHash), transactions(transactions),
+    : version(version), prevHash(prevHash), transactions(transactions), 
       difficultyTarget(difficultyTarget), nonce(0), rxContext_(rxContext_ref) { // Inicializa rxContext_
     this->timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                           std::chrono::system_clock::now().time_since_epoch()).count();
@@ -23,9 +23,9 @@ Block::Block(int version, std::string prevHash, std::vector<Transaction> transac
 }
 
 // Calcula el hash del encabezado del bloque utilizando el algoritmo RandomX.
+// Ya no necesita el rxContext como parámetro, usa la referencia miembro.
 std::string Block::calculateHash() const {
     std::stringstream ss;
-    // CORRECCIÓN: Usar toHexString para imprimir merkleRoot
     ss << version << prevHash << Radix::toHexString(merkleRoot) << timestamp << difficultyTarget << nonce;
     std::string header_data = ss.str();
 
@@ -35,9 +35,10 @@ std::string Block::calculateHash() const {
 }
 
 // Mina el bloque: encuentra un 'nonce' tal que el hash del bloque cumpla con la dificultad.
+// Ya no necesita el rxContext como parámetro, usa la referencia miembro.
 void Block::mineBlock(unsigned int difficulty) {
     // Mensaje inicial, el nonce se actualizará en el bucle
-    std::cout << "Minando bloque (dificultad: " << difficulty << ")..." << std::endl;
+    std::cout << "Minando bloque (dificultad: " << difficulty << ")..." << std::endl; 
     long long attempts = 0; // Contador de intentos de minería
     while (true) {
         this->hash = calculateHash(); // Recalcula el hash con el nonce actual
@@ -63,12 +64,12 @@ void Block::updateMerkleRoot() {
     if (transactions.empty()) {
         // Si no hay transacciones, la Raíz de Merkle puede ser el hash de una cadena vacía o un valor fijo.
         // Por simplicidad, se hash de una cadena vacía.
-        merkleRoot = Radix::SHA256(""); // CORRECCIÓN: Asignar directamente RandomXHash
+        Radix::RandomXHash empty_hash = Radix::SHA256(""); // Se asume SHA256 de string a RandomXHash
+        merkleRoot = empty_hash; // Asigna directamente el RandomXHash
         return;
     }
 
-    // CORRECCIÓN: Cambiar a std::vector<Radix::RandomXHash> para consistencia
-    std::vector<Radix::RandomXHash> current_hashes;
+    std::vector<Radix::RandomXHash> current_hashes; // Cambiado a RandomXHash
     // Obtiene el hash de cada transacción para iniciar el árbol de Merkle.
     for (const auto& tx : transactions) {
         Radix::RandomXHash tx_hash_bytes;
@@ -78,21 +79,19 @@ void Block::updateMerkleRoot() {
 
     // Construye el árbol de Merkle, combinando pares de hashes hasta que solo quede uno (la raíz).
     while (current_hashes.size() > 1) {
+        std::vector<Radix::RandomXHash> next_hashes; // Cambiado a RandomXHash
         // Si hay un número impar de nodos, duplica el último
         if (current_hashes.size() % 2 != 0) {
             current_hashes.push_back(current_hashes.back());
         }
 
-        // CORRECCIÓN: Cambiar a std::vector<Radix::RandomXHash> para el siguiente nivel
-        std::vector<Radix::RandomXHash> next_hashes;
         for (size_t i = 0; i < current_hashes.size(); i += 2) {
-            // CORRECCIÓN: Concatenar los bytes directamente
             std::vector<uint8_t> combined_data(current_hashes[i].begin(), current_hashes[i].end());
             combined_data.insert(combined_data.end(), current_hashes[i+1].begin(), current_hashes[i+1].end());
             
             // Hash la combinación usando Radix::SHA256 (que usa SHA256 de OpenSSL)
-            Radix::RandomXHash hashed_pair = Radix::SHA256(combined_data); // Usa la sobrecarga para vector<uint8_t>
-            next_hashes.push_back(hashed_pair);
+            Radix::RandomXHash combined_hash_bytes = Radix::SHA256(combined_data); // Usa SHA256 con vector<uint8_t>
+            next_hashes.push_back(combined_hash_bytes);
         }
         current_hashes = next_hashes;
     }
@@ -109,7 +108,7 @@ bool Block::checkDifficulty(unsigned int difficulty) const {
     Radix::fromHexString(hash, hash_bytes); // fromHexString está en randomx_util.h
 
     // Comprueba los bytes completos que deben ser cero
-    for (unsigned int i = 0; i < difficulty / 8; ++i) {
+    for (unsigned int i = 0; i < difficulty / 8; ++i) { 
         if (hash_bytes[i] != 0x00) {
             return false;
         }
@@ -121,7 +120,7 @@ bool Block::checkDifficulty(unsigned int difficulty) const {
         // Crea una máscara para verificar los bits más significativos del byte actual
         uint8_t mask = (1 << (8 - remaining_bits)) - 1; // Ej.: para 4 bits, la máscara es 00001111b
         // Si (byte actual AND NOT mask) no es cero, significa que los bits significativos no son cero.
-        if ((hash_bytes[difficulty / 8] & ~mask) != 0x00) {
+        if ((hash_bytes[difficulty / 8] & ~mask) != 0x00) { 
             return false;
         }
     }
@@ -129,13 +128,13 @@ bool Block::checkDifficulty(unsigned int difficulty) const {
 }
 
 // Convierte el objeto de bloque a una cadena legible para visualización.
+// Ya no necesita el rxContext como parámetro, usa la referencia miembro.
 std::string Block::toString() const {
     std::stringstream ss;
     ss << "Block Header:\n";
     ss << "  Version: " << version << "\n";
     ss << "  Prev Hash: " << prevHash << "\n";
-    // CORRECCIÓN: Usar toHexString para imprimir merkleRoot
-    ss << "  Merkle Root: " << Radix::toHexString(merkleRoot) << "\n";
+    ss << "  Merkle Root: " << Radix::toHexString(merkleRoot) << "\n"; // Ahora es un RandomXHash
     ss << "  Timestamp: " << timestamp << "\n";
     ss << "  Difficulty Target: 0x" << std::hex << difficultyTarget << std::dec << "\n";
     ss << "  Nonce: " << nonce << "\n";
@@ -150,7 +149,7 @@ std::string Block::toString() const {
 }
 
 // Valida la integridad de un bloque.
-// CAMBIO: isValid ahora toma el conjunto de UTXO para la validación de transacciones.
+// Ahora toma el conjunto de UTXO para la validación de transacciones.
 bool Block::isValid(const std::map<std::string, TransactionOutput>& utxoSet) const {
     // 1. Verifica si el hash del bloque se calculó correctamente
     if (calculateHash() != hash) {
@@ -171,14 +170,12 @@ bool Block::isValid(const std::map<std::string, TransactionOutput>& utxoSet) con
     // 3. Verifica la raíz de Merkle
     if (transactions.empty()) {
         Radix::RandomXHash empty_hash = Radix::SHA256(""); // Se asume SHA256 de string
-        // CORRECCIÓN: Comparar RandomXHash directamente
-        if (merkleRoot != empty_hash) { 
+        if (merkleRoot != empty_hash) { // Comparación directa de RandomXHash
             std::cerr << "Error: La raiz de Merkle no coincide para un bloque vacio." << std::endl;
             return false;
         }
     } else {
-        // CORRECCIÓN: Cambiar a std::vector<Radix::RandomXHash> para consistencia
-        std::vector<Radix::RandomXHash> current_hashes;
+        std::vector<Radix::RandomXHash> current_hashes; // Cambiado a RandomXHash
         for (const auto& tx : transactions) {
             Radix::RandomXHash tx_hash_bytes;
             Radix::fromHexString(tx.calculateHash(), tx_hash_bytes); // Convertir string a RandomXHash
@@ -189,20 +186,17 @@ bool Block::isValid(const std::map<std::string, TransactionOutput>& utxoSet) con
             if (current_hashes.size() % 2 != 0) {
                 current_hashes.push_back(current_hashes.back());
             }
-            // CORRECCIÓN: Cambiar a std::vector<Radix::RandomXHash> para el siguiente nivel
-            std::vector<Radix::RandomXHash> next_hashes;
+            std::vector<Radix::RandomXHash> next_hashes; // Cambiado a RandomXHash
             for (size_t i = 0; i < current_hashes.size(); i += 2) {
-                // CORRECCIÓN: Concatenar los bytes directamente
                 std::vector<uint8_t> combined_data(current_hashes[i].begin(), current_hashes[i].end());
                 combined_data.insert(combined_data.end(), current_hashes[i+1].begin(), current_hashes[i+1].end());
 
-                Radix::RandomXHash hashed_pair = Radix::SHA256(combined_data); // Usa la sobrecarga para vector<uint8_t>
-                next_hashes.push_back(hashed_pair);
+                Radix::RandomXHash combined_hash_bytes = Radix::SHA256(combined_data);
+                next_hashes.push_back(combined_hash_bytes);
             }
             current_hashes = next_hashes;
         }
-        // CORRECCIÓN: Comparar RandomXHash directamente y usar toHexString para imprimir
-        if (merkleRoot != current_hashes[0]) {
+        if (merkleRoot != current_hashes[0]) { // Comparación directa de RandomXHash
             std::cerr << "Error: La raiz de Merkle no coincide. Recalculado: " << Radix::toHexString(current_hashes[0]) << ", Almacenado: " << Radix::toHexString(merkleRoot) << std::endl;
             return false;
         }
@@ -227,7 +221,6 @@ bool Block::isValid(const std::map<std::string, TransactionOutput>& utxoSet) con
         }
     }
     // Asegura que un bloque que no sea Génesis tenga exactamente una transacción de coinbase.
-    // El bloque Génesis puede no tener transacciones (o no una de coinbase), por lo que se excluye de esta regla.
     if (!isGenesisBlock && !hasCoinbase) {
         std::cerr << "Error: El bloque (no genesis) debe contener exactamente una transaccion de coinbase." << std::endl;
         return false;
