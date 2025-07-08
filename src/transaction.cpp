@@ -8,6 +8,7 @@
 #include <chrono>
 #include <algorithm> // Para std::all_of
 #include <numeric>   // Para std::accumulate
+#include <stdexcept> // Para std::runtime_error
 
 namespace Radix {
 
@@ -129,6 +130,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
         std::string utxoKey = input.prevTxId + ":" + std::to_string(input.outputIndex);
         auto it = utxoSet.find(utxoKey);
         if (it == utxoSet.end()) {
+            // ERROR ESPECÍFICO: UTXO no encontrada o ya gastada
             std::cerr << "Error de validacion: UTXO de entrada no encontrada o ya gastada: " << utxoKey << std::endl;
             return false;
         }
@@ -177,6 +179,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
     // 4. Verificar que el total de entradas es mayor o igual al total de salidas (la diferencia es la tarifa de transacción)
     // Se puede añadir una tarifa mínima aquí si es necesario.
     if (totalInputAmount < totalOutputAmount) {
+        // ERROR ESPECÍFICO: Fondos insuficientes
         std::cerr << "Error de validacion: Fondos insuficientes. Entradas: " << totalInputAmount << ", Salidas: " << totalOutputAmount << std::endl;
         return false;
     }
