@@ -4,94 +4,70 @@
 
 #include <string>
 #include <vector>
-#include <cstdint> // Para uint8_t
-#include <memory> // Para std::unique_ptr si fuera necesario
-#include <sstream> // Para std::stringstream en toString
-#include <map>     // Para std::map en Transaction::isValid (para el UTXOSet)
+#include <map> // Para std::map en isValid
+#include <cstdint> // Para uint64_t
 
-#include "crypto.h"       // Para Radix::PublicKey, Radix::Signature, Radix::Address, Radix::KeyPair
-#include "randomx_util.h" // Para Radix::RandomXHash, Radix::toHexString, Radix::fromHexString
+#include "crypto.h" // Para Radix::PublicKey, Radix::Signature, Radix::RandomXHash
 
 namespace Radix {
 
-// Struct para representar una entrada de transacción (referencia a una salida anterior)
+// Estructuras para las entradas y salidas de transacciones
 struct TransactionInput {
-    std::string prevTxId;    // ID de la transacción anterior de la que se gasta la salida
-    int outputIndex;         // Índice de la salida en la prevTxId que se está gastando
-    Radix::Signature signature; // Firma que autoriza el gasto de esta entrada
-    Radix::PublicKey pubKey;     // Clave pública del propietario de la salida gastada
+    std::string prevTxId;    // ID de la transacción anterior de la cual se gasta una salida
+    uint64_t outputIndex;    // Índice de la salida en la transacción anterior
+    PublicKey pubKey;        // Clave pública del firmante (para verificar la firma)
+    Signature signature;     // Firma de la transacción
 
-    // Método para convertir la entrada a una cadena legible
-    std::string toString() const {
-        std::stringstream ss;
-        ss << "      PrevTxId: " << prevTxId << "\n";
-        ss << "      OutputIndex: " << outputIndex << "\n";
-        ss << "      PubKey: " << Radix::toHexString(pubKey) << "\n";
-        ss << "      Signature: " << Radix::toHexString(signature) << "\n";
-        return ss.str();
-    }
+    // Constructor por defecto
+    TransactionInput() : outputIndex(0) {}
+
+    // Constructor con parámetros
+    TransactionInput(const std::string& prevTxId, uint64_t outputIndex, const PublicKey& pubKey, const Signature& signature)
+        : prevTxId(prevTxId), outputIndex(outputIndex), pubKey(pubKey), signature(signature) {}
 };
 
-// Struct para representar una salida de transacción (a quién va el monto)
 struct TransactionOutput {
-    double amount;
-    std::string recipientAddress;
-    std::string utxoId; // Identificador único para esta UTXO (TxId:OutputIndex)
+    double amount;          // Cantidad de monedas
+    std::string recipientAddress; // Dirección del destinatario
 
-    // Método para convertir la salida a una cadena legible
-    std::string toString() const {
-        std::stringstream ss;
-        ss << "      Amount: " << amount << "\n";
-        ss << "      Recipient: " << recipientAddress << "\n";
-        ss << "      UTXO ID: " << utxoId << "\n"; 
-        return ss.str();
-    }
+    // Constructor por defecto
+    TransactionOutput() : amount(0.0) {}
+
+    // Constructor con parámetros
+    TransactionOutput(double amount, const std::string& recipientAddress)
+        : amount(amount), recipientAddress(recipientAddress) {}
 };
 
 class Transaction {
 public:
-    // **NUEVO Constructor Principal para el Modelo UTXO:**
-    // Una transacción se define por sus entradas y salidas.
-    Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs, bool isCoinbase = false);
-
-    // Constructor para transacciones coinbase (solo un destinatario y monto, y es coinbase)
-    // Este constructor simplificado es para la creación de la recompensa del minero.
-    Transaction(std::string recipientAddress, double amount, bool isCoinbase = true);
-
-    // --- Miembros de la transacción ---
-    std::string id; // ID de la transacción (hash de los datos de la transacción)
-    long long timestamp; // Marca de tiempo de la transacción
-    bool isCoinbase; // Indica si es una transacción de coinbase
-
-    std::vector<TransactionInput> inputs; // Entradas de la transacción
+    std::string id;             // Hash de la transacción
+    long long timestamp;        // Marca de tiempo de la transacción
+    std::vector<TransactionInput> inputs;   // Entradas de la transacción
     std::vector<TransactionOutput> outputs; // Salidas de la transacción
+    bool isCoinbase;            // Indica si es una transacción coinbase
 
-    // NOTA: senderAddress y senderPubKey ahora se derivan de los inputs
-    // y se usan internamente para la lógica de firma/validación.
-    // No son miembros directos que se inicialicen desde el constructor principal
-    // para evitar redundancia y mantener el modelo UTXO puro.
+    // Constructor para transacciones normales
+    Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs);
 
-    // --- Métodos de la transacción ---
-    // Calcula el hash de la transacción (TxID).
+    // Constructor para transacciones coinbase
+    Transaction(const std::string& recipientAddress, double amount, bool isCoinbase = true);
+
+    // Calcula el hash de la transacción
     std::string calculateHash() const;
 
-    // Firma la transacción.
-    // En un modelo UTXO, esto implica firmar el hash de la transacción y
-    // asignar la clave pública y la firma a cada input.
-    void sign(const Radix::KeyPair& keyPair);
+    // Firma la transacción con la clave privada del remitente
+    void sign(const PrivateKey& senderPrivateKey, const PublicKey& senderPublicKey, const std::map<std::string, TransactionOutput>& utxoSet);
 
-    // Verifica la validez de la transacción, utilizando el conjunto de UTXO disponible.
-    // Este método es crucial para la validación del doble gasto y la validez de los fondos.
-    // Recibe el UTXOSet actual para verificar las entradas.
+    // Valida la transacción (firmas, montos, UTXOs)
     bool isValid(const std::map<std::string, TransactionOutput>& utxoSet) const;
 
-    // Convierte la transacción a una representación de cadena para visualización.
-    std::string toString() const;
+    // Convierte la transacción a una representación de cadena para impresión/depuración
+    // ¡CORRECCIÓN AQUÍ! Añadir parámetro opcional para indentación
+    std::string toString(bool indent = false) const;
 
 private:
-    // Actualiza el ID de la transacción (basado en calculateHash).
-    // Es privado porque el ID debe ser gestionado internamente después de la construcción.
-    void updateId();
+    // Método auxiliar para calcular el hash de la transacción
+    std::string calculateRawHash() const;
 };
 
 } // namespace Radix

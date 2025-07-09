@@ -44,6 +44,7 @@ add_executable(radix_blockchain
     src/crypto.cpp
     src/merkle_tree.cpp
     src/randomx_util.cpp
+    src/base58.cpp
 )
 
 # Enlazar bibliotecas

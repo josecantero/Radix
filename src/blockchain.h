@@ -4,7 +4,6 @@
 
 #include <vector>
 #include <string>
-#include <memory> // Para std::unique_ptr
 #include <map>    // Para el UTXOSet
 
 #include "block.h"        // Incluir la definición de Block
@@ -13,53 +12,60 @@
 
 namespace Radix {
 
+// Define el intervalo de bloques para el halving (para demostración, un número pequeño)
+// En Bitcoin, esto es 210,000 bloques.
+const unsigned int HALVING_INTERVAL = 3; 
+
 class Blockchain {
 public:
     // Constructor de la Blockchain
+    // Se requiere la dificultad al inicializar
     Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext_ref);
 
     // Añade una transacción a las transacciones pendientes
+    // Ahora valida la transacción contra el UTXOSet actual
     void addTransaction(const Radix::Transaction& transaction);
 
     // Mina las transacciones pendientes y crea un nuevo bloque
+    // Ahora recibe el RandomXContext
     void minePendingTransactions(const std::string& miningRewardAddress);
 
     // Obtiene el balance de una dirección específica utilizando el UTXOSet
     double getBalanceOfAddress(const std::string& address) const;
 
-    // Nuevo método para obtener las UTXOs de una dirección específica
-    std::vector<TransactionOutput> getUTXOsForAddress(const std::string& address) const;
-
     // Valida la integridad de toda la cadena
+    // Ahora recibe el RandomXContext para la validación de bloques
     bool isChainValid() const;
 
     // Imprime todos los bloques en la cadena
+    // Ahora recibe el RandomXContext para el toString de bloques
     void printChain() const;
 
     // Obtiene el último bloque de la cadena
     const Block& getLatestBlock() const;
 
-    // Obtiene el tamaño actual de la cadena (número de bloques)
+    // Nuevo método: Obtiene el tamaño actual de la cadena (número de bloques)
     size_t getChainSize() const;
 
-    // Obtiene el UTXOSet actual (para depuración o validación externa)
-    const std::map<std::string, TransactionOutput>& getUTXOSet() const { return utxoSet; }
+    // ¡NUEVO! Getter público para el UTXO Set
+    const std::map<std::string, TransactionOutput>& getUtxoSet() const { return utxoSet; }
+
 
 private:
     std::vector<Block> chain;
     std::vector<Transaction> pendingTransactions;
     unsigned int difficulty;
-    double miningReward;
-    const Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX
-
-    std::map<std::string, TransactionOutput> utxoSet; // Conjunto de UTXOs (Unspent Transaction Outputs)
+    double currentMiningReward; // Recompensa de minería actual (para el halving)
+    Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX (no const para poder pasarlo a métodos)
+    std::map<std::string, TransactionOutput> utxoSet; // Conjunto de UTXO globales
 
     // Crea el bloque génesis
     Block createGenesisBlock();
-    
-    // Helper para procesar transacciones de un bloque y actualizar un UTXOSet dado.
-    // Se usa en minePendingTransactions (para utxoSet miembro) y en isChainValid (para utxoSet simulado).
-    static void applyBlockTransactionsToUtxoSet(const Block& block, std::map<std::string, TransactionOutput>& targetUtxoSet);
+    // Actualiza el UTXOSet con las transacciones de un nuevo bloque
+    void updateUtxoSet(const Block& block);
+    // Reinicia el UTXOSet y lo reconstruye a partir de la cadena actual
+    // Este método es útil para la reconstrucción del estado, pero no está directamente ligado a la persistencia JSON.
+    void rebuildUtxoSet();
 };
 
 } // namespace Radix

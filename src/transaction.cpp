@@ -1,208 +1,230 @@
 // transaction.cpp
 #include "transaction.h"
-#include "crypto.h" // Para Radix::SHA256, Radix::KeyPair
-#include "randomx_util.h" // Para Radix::toHexString, Radix::fromHexString, Radix::RandomXHash
+#include "crypto.h" // Para Radix::KeyPair, Radix::SHA256, Radix::toHexString
+#include "randomx_util.h" // Para toHexString
+// #include "base58.h" // Se incluye si es necesario, pero no directamente en la lógica de Transaction
 
 #include <iostream>
 #include <sstream>
-#include <chrono>
+#include <stdexcept>
 #include <algorithm> // Para std::all_of
-#include <numeric>   // Para std::accumulate
-#include <stdexcept> // Para std::runtime_error
+#include <iomanip>   // Para std::fixed, std::setprecision
+#include <chrono>    // Para std::chrono::system_clock
+#include <array>     // ¡NUEVO! Para asegurar la definición completa de std::array
+#include <new>       // ¡NUEVO! Para std::nothrow_t y sobrecargas de operator new
+#include <cstddef>   // ¡NUEVO! Para std::streamsize y otros tipos de definición estándar
 
 namespace Radix {
 
-// Constructor Principal para el Modelo UTXO:
-Transaction::Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs, bool isCoinbase)
-    : isCoinbase(isCoinbase), inputs(inputs), outputs(outputs) {
+// Constructor para transacciones normales
+Transaction::Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs)
+    : inputs(inputs), outputs(outputs), isCoinbase(false) {
     this->timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                          std::chrono::system_clock::now().time_since_epoch()).count();
-    updateId(); // Calculate ID after inputs/outputs are set
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    this->id = calculateHash(); // Calcula el ID de la transacción
 }
 
-// Constructor para transacciones coinbase (solo un destinatario y monto, y es coinbase)
-Transaction::Transaction(std::string recipientAddress, double amount, bool isCoinbase)
+// Constructor para transacciones coinbase
+Transaction::Transaction(const std::string& recipientAddress, double amount, bool isCoinbase)
     : isCoinbase(isCoinbase) {
     this->timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                          std::chrono::system_clock::now().time_since_epoch()).count();
-    this->inputs = {}; // Coinbase transactions have no inputs
-    this->outputs.push_back({amount, recipientAddress, ""}); // UTXO ID will be set during block processing
-    updateId(); // Calculate ID after outputs are set
-}
-
-// Actualiza el ID de la transacción (basado en calculateHash).
-void Transaction::updateId() {
-    this->id = calculateHash();
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    // Las coinbase no tienen inputs
+    outputs.push_back(TransactionOutput(amount, recipientAddress));
+    this->id = calculateHash(); // Calcula el ID de la transacción
 }
 
 // Calcula el hash de la transacción
 std::string Transaction::calculateHash() const {
+    return calculateRawHash();
+}
+
+// Método auxiliar para calcular el hash de la transacción
+std::string Transaction::calculateRawHash() const {
     std::stringstream ss;
-    ss << timestamp << isCoinbase;
-
-    // Incluir hashes de inputs en el cálculo del hash
+    ss << timestamp;
     for (const auto& input : inputs) {
-        ss << input.prevTxId << input.outputIndex << Radix::toHexString(input.pubKey);
-        // NOTA: No incluir la firma del input en el hash de la transacción, ya que la firma depende del hash
+        ss << input.prevTxId << input.outputIndex << toHexString(input.pubKey) << toHexString(input.signature);
     }
-
-    // Incluir hashes de outputs en el cálculo del hash
     for (const auto& output : outputs) {
         ss << output.amount << output.recipientAddress;
     }
+    ss << isCoinbase; // Incluir el estado coinbase en el hash
 
-    std::string data_to_hash = ss.str();
-    Radix::RandomXHash hash_bytes = Radix::SHA256(data_to_hash); 
-    return Radix::toHexString(hash_bytes);
+    // Usa SHA256 para el hash de la transacción
+    return toHexString(Radix::SHA256(ss.str()));
 }
 
-// Firma la transacción (actualiza el campo de firma)
-void Transaction::sign(const Radix::KeyPair& keyPair) {
+// Firma la transacción con la clave privada del remitente
+void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& senderPublicKey, const std::map<std::string, TransactionOutput>& utxoSet) {
     if (isCoinbase) {
-        std::cerr << "Advertencia: Intentando firmar una transaccion coinbase. Las transacciones coinbase no requieren firma estandar." << std::endl;
-        return;
+        throw std::runtime_error("No se puede firmar una transaccion coinbase.");
     }
 
-    if (inputs.empty()) {
-        throw std::runtime_error("Error al firmar: Transaccion sin inputs para firmar.");
-    }
-
-    // El hash a firmar es el hash de la transacción
-    std::string transaction_hash_str = calculateHash();
-    Radix::RandomXHash message_hash_bytes;
-    Radix::fromHexString(transaction_hash_str, message_hash_bytes); // Convierte string a RandomXHash
-
-    // Firma cada input de la transacción
-    for (auto& input : inputs) {
-        // Verifica que la clave pública del input coincida con la clave pública del KeyPair
-        if (input.pubKey.empty() || keyPair.getPublicKey() != input.pubKey) {
-            std::cerr << "DEBUG (sign): KeyPair Public Key: " << Radix::toHexString(keyPair.getPublicKey()) << std::endl;
-            std::cerr << "DEBUG (sign): Input Public Key: " << Radix::toHexString(input.pubKey) << std::endl;
-            throw std::runtime_error("Error al firmar: La clave publica del par de claves no coincide con la clave publica del input.");
+    // Verificar que las entradas de la transacción pertenecen al remitente
+    double inputSum = 0;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        std::string utxoKey = inputs[i].prevTxId + ":" + std::to_string(inputs[i].outputIndex);
+        auto it = utxoSet.find(utxoKey);
+        if (it == utxoSet.end()) {
+            throw std::runtime_error("UTXO de entrada no encontrada o ya gastada: " + utxoKey);
         }
-        input.signature = keyPair.sign(message_hash_bytes);
+        if (it->second.recipientAddress != KeyPair::deriveAddress(senderPublicKey)) {
+            throw std::runtime_error("UTXO de entrada no pertenece al remitente.");
+        }
+        inputSum += it->second.amount;
     }
+
+    // Verificar que la suma de outputs no excede la suma de inputs
+    double outputSum = 0;
+    for (const auto& output : outputs) {
+        outputSum += output.amount;
+    }
+
+    if (outputSum > inputSum) {
+        throw std::runtime_error("La suma de las salidas excede la suma de las entradas.");
+    }
+
+    // Crear un KeyPair temporal para firmar
+    KeyPair signer(senderPrivateKey);
+
+    // Hash de la transacción sin las firmas (para firmar)
+    std::string hashToSign;
+    {
+        std::stringstream ss;
+        ss << timestamp;
+        for (const auto& input : inputs) {
+            ss << input.prevTxId << input.outputIndex << toHexString(input.pubKey); // No incluir la firma
+        }
+        for (const auto& output : outputs) {
+            ss << output.amount << output.recipientAddress;
+        }
+        ss << isCoinbase;
+        hashToSign = toHexString(Radix::SHA256(ss.str()));
+    }
+
+    // Firmar cada input
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        // Asegurarse de que la clave pública en el input coincida con la clave pública del firmante
+        if (inputs[i].pubKey != senderPublicKey) {
+            throw std::runtime_error("La clave publica en el input no coincide con la clave publica del firmante.");
+        }
+        inputs[i].signature = signer.sign(Radix::SHA256(hashToSign)); // Firmar el hash de la transacción
+    }
+
+    this->id = calculateHash(); // Recalcular el ID con las firmas
 }
 
-// Verifica la validez de la transacción, utilizando el conjunto de UTXO disponible.
+// Valida la transacción (firmas, montos, UTXOs)
 bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSet) const {
-    std::cerr << "DEBUG (isValid): Validando transaccion ID: " << id << std::endl;
-    std::cerr << "DEBUG (isValid): Is Coinbase: " << (isCoinbase ? "Yes" : "No") << std::endl;
-    std::cerr << "DEBUG (isValid): Numero de Inputs: " << inputs.size() << std::endl;
-    std::cerr << "DEBUG (isValid): Numero de Outputs: " << outputs.size() << std::endl;
-
-
     if (isCoinbase) {
-        // Reglas de validación para transacciones coinbase
-        if (!inputs.empty()) {
-            std::cerr << "Error de validacion de coinbase: Las transacciones coinbase no deben tener inputs." << std::endl;
-            return false;
-        }
-        if (outputs.empty()) {
-            std::cerr << "Error de validacion de coinbase: Las transacciones coinbase deben tener al menos una salida." << std::endl;
-            return false;
-        }
-        // Podrías añadir reglas de monto aquí (ej. la recompensa no excede un límite).
-        return true; 
+        // Las transacciones coinbase no tienen inputs y crean una nueva moneda.
+        // Solo verificamos que tenga al menos una salida y que el monto no sea negativo.
+        return !outputs.empty() && outputs[0].amount >= 0;
     }
 
-    // Para transacciones estándar (no coinbase):
     if (inputs.empty()) {
         std::cerr << "Error de validacion: Transaccion no coinbase sin inputs." << std::endl;
         return false;
     }
-    if (outputs.empty()) {
-        std::cerr << "Error de validacion: Transaccion sin outputs." << std::endl;
+
+    // Verificar que todas las entradas tienen firmas y claves públicas
+    if (!std::all_of(inputs.begin(), inputs.end(), [](const TransactionInput& input){
+        return !input.pubKey.empty() && !input.signature.empty();
+    })) {
+        std::cerr << "Error de validacion: Inputs de transaccion sin clave publica o firma." << std::endl;
         return false;
     }
 
-    // 1. Verificar que el ID de la transacción sea correcto
-    if (calculateHash() != id) {
-        std::cerr << "Error de validacion: El ID de la transaccion no coincide con su hash calculado." << std::endl;
-        return false;
-    }
-
-    double totalInputAmount = 0;
-    // 2. Validar cada input
-    std::cerr << "DEBUG (isValid): Procesando inputs (" << inputs.size() << ")..." << std::endl;
+    double inputSum = 0;
     for (const auto& input : inputs) {
-        // a) Verificar que la UTXO referenciada existe en el UTXOSet
         std::string utxoKey = input.prevTxId + ":" + std::to_string(input.outputIndex);
         auto it = utxoSet.find(utxoKey);
+
         if (it == utxoSet.end()) {
-            // ERROR ESPECÍFICO: UTXO no encontrada o ya gastada
             std::cerr << "Error de validacion: UTXO de entrada no encontrada o ya gastada: " << utxoKey << std::endl;
             return false;
         }
-        const TransactionOutput& spentUtxo = it->second;
-        std::cerr << "DEBUG (isValid): Input UTXO: " << utxoKey << ", Monto: " << spentUtxo.amount << ", Destinatario: " << spentUtxo.recipientAddress << std::endl;
 
-        // b) Verificar que la clave pública del input coincide con la dirección del propietario de la UTXO
-        if (Radix::KeyPair::deriveAddress(input.pubKey) != spentUtxo.recipientAddress) {
-            std::cerr << "Error de validacion: La clave publica del input (" << Radix::KeyPair::deriveAddress(input.pubKey) << ") no coincide con el propietario de la UTXO gastada (" << spentUtxo.recipientAddress << ")." << std::endl;
+        const TransactionOutput& referencedOutput = it->second;
+
+        // Verificar que la clave pública del input coincide con la dirección de la UTXO referenciada
+        if (KeyPair::deriveAddress(input.pubKey) != referencedOutput.recipientAddress) {
+            std::cerr << "Error de validacion: La clave publica del input no coincide con el destinatario de la UTXO referenciada." << std::endl;
             return false;
         }
 
-        // c) Verificar la firma del input
-        if (input.signature.empty()) {
-            std::cerr << "Error de validacion: Firma ausente para el input." << std::endl;
-            return false;
+        // Hash de la transacción sin las firmas (para verificar)
+        std::string hashToVerify;
+        {
+            std::stringstream ss;
+            ss << timestamp;
+            for (const auto& in : inputs) {
+                ss << in.prevTxId << in.outputIndex << toHexString(in.pubKey); // No incluir la firma
+            }
+            for (const auto& out : outputs) {
+                ss << out.amount << out.recipientAddress;
+            }
+            ss << isCoinbase;
+            hashToVerify = toHexString(Radix::SHA256(ss.str()));
         }
 
-        // Recalcular el hash de la transacción que fue firmado
-        std::string transaction_hash_str = calculateHash();
-        Radix::RandomXHash message_hash_bytes;
-        Radix::fromHexString(transaction_hash_str, message_hash_bytes); // Convierte string a RandomXHash
-
-        if (!Radix::KeyPair::verify(input.pubKey, message_hash_bytes, input.signature)) {
-            std::cerr << "Error de validacion: Firma invalida para el input." << std::endl;
+        // Verificar la firma
+        if (!KeyPair::verify(input.pubKey, Radix::SHA256(hashToVerify), input.signature)) {
+            std::cerr << "Error de validacion: Firma invalida para el input de transaccion." << std::endl;
             return false;
         }
-        totalInputAmount += spentUtxo.amount;
+        inputSum += referencedOutput.amount;
     }
-    std::cerr << "DEBUG (isValid): Suma Total de Entradas: " << totalInputAmount << std::endl;
 
-
-    double totalOutputAmount = 0;
-    // 3. Sumar el total de las salidas
-    std::cerr << "DEBUG (isValid): Procesando outputs (" << outputs.size() << ")..." << std::endl;
+    double outputSum = 0;
     for (const auto& output : outputs) {
-        if (output.amount <= 0) {
-            std::cerr << "Error de validacion: El monto de salida debe ser positivo." << std::endl;
+        if (output.amount < 0) {
+            std::cerr << "Error de validacion: Output de transaccion con monto negativo." << std::endl;
             return false;
         }
-        std::cerr << "DEBUG (isValid): Output: Monto: " << output.amount << ", Destinatario: " << output.recipientAddress << std::endl;
-        totalOutputAmount += output.amount;
+        outputSum += output.amount;
     }
-    std::cerr << "DEBUG (isValid): Suma Total de Salidas: " << totalOutputAmount << std::endl;
 
-    // 4. Verificar que el total de entradas es mayor o igual al total de salidas (la diferencia es la tarifa de transacción)
-    // Se puede añadir una tarifa mínima aquí si es necesario.
-    if (totalInputAmount < totalOutputAmount) {
-        // ERROR ESPECÍFICO: Fondos insuficientes
-        std::cerr << "Error de validacion: Fondos insuficientes. Entradas: " << totalInputAmount << ", Salidas: " << totalOutputAmount << std::endl;
+    // La suma de las salidas no puede exceder la suma de las entradas (incluyendo tarifas de transacción)
+    if (outputSum > inputSum) {
+        std::cerr << "Error de validacion: La suma de las salidas excede la suma de las entradas." << std::endl;
         return false;
     }
 
-    std::cerr << "DEBUG (isValid): Transaccion valida." << std::endl;
-    return true; // La transacción es válida
-}
-
-// Convierte la transacción a una representación de cadena para visualización
-std::string Transaction::toString() const {
-    std::stringstream ss;
-    ss << "  Tx ID: " << id << "\n";
-    ss << "    Timestamp: " << timestamp << "\n";
-    ss << "    Is Coinbase: " << (isCoinbase ? "Yes" : "No") << "\n";
-
-    ss << "    Inputs (" << inputs.size() << "):\n";
-    for (const auto& input : inputs) {
-        ss << input.toString();
+    // Si la transacción ya tiene un ID, verificar que coincide con el hash calculado
+    if (!id.empty() && id != calculateRawHash()) {
+        std::cerr << "Error de validacion: ID de transaccion no coincide con el hash calculado." << std::endl;
+        return false;
     }
 
-    ss << "    Outputs (" << outputs.size() << "):\n";
+    std::cout << "DEBUG (isValid): Transaccion valida." << std::endl;
+    return true;
+}
+
+// Convierte la transacción a una representación de cadena para impresión/depuración
+std::string Transaction::toString(bool indent) const {
+    std::string prefix = indent ? "    " : ""; // Cuatro espacios para indentación
+    std::stringstream ss;
+    ss << prefix << "Tx ID: " << id << "\n"
+       << prefix << "Timestamp: " << timestamp << "\n"
+       << prefix << "Is Coinbase: " << (isCoinbase ? "Yes" : "No") << "\n";
+
+    ss << prefix << "Inputs (" << inputs.size() << "):\n";
+    for (const auto& input : inputs) {
+        ss << prefix << "  PrevTxId: " << input.prevTxId << "\n"
+           << prefix << "  OutputIndex: " << input.outputIndex << "\n"
+           << prefix << "  PubKey: " << toHexString(input.pubKey) << "\n"
+           << prefix << "  Signature: " << toHexString(input.signature) << "\n";
+    }
+
+    ss << prefix << "Outputs (" << outputs.size() << "):\n";
     for (const auto& output : outputs) {
-        ss << output.toString();
+        ss << prefix << "  Amount: " << std::fixed << std::setprecision(0) << output.amount << "\n"
+           << prefix << "  Recipient: " << output.recipientAddress << "\n"
+           << prefix << "  UTXO ID: " << "\n"; // UTXO ID se genera dinámicamente, no es parte del output en sí
     }
     return ss.str();
 }

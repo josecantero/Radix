@@ -4,47 +4,57 @@
 
 #include <string>
 #include <vector>
-#include <memory> // Para std::unique_ptr
-#include <array>  // Para RandomXHash
-#include <map>    // Para std::map en isValid
+#include <cstdint> // Para uint64_t
+#include <chrono>  // Para std::chrono::system_clock
+#include <map>     // Para std::map en isValid
 
-#include "transaction.h" // Incluir la clase Transaction
-#include "randomx_util.h" // Para RandomXContext y RandomXHash
+#include "transaction.h"
+#include "randomx_util.h" // Para la declaración de RandomXContext
 
 namespace Radix {
 
+// Declaración anticipada para evitar dependencia circular si es necesario
+// class RandomXContext; // No es necesario si randomx_util.h ya lo declara
+
 class Block {
 public:
-    // Constructor del bloque
-    Block(int version, std::string prevHash, std::vector<Radix::Transaction> transactions, 
-          unsigned int difficultyTarget, const RandomXContext& rxContext_ref); // Añadido rxContext_ref
+    // Propiedades del bloque
+    uint64_t version;
+    long long timestamp;
+    std::string prevHash;
+    std::string merkleRoot;
+    unsigned int difficulty;
+    uint64_t nonce;
+    std::string hash;
+    std::vector<Transaction> transactions; // Lista de transacciones en este bloque
 
-    int version; // Versión del bloque
-    long long timestamp; // Marca de tiempo de creación del bloque
-    std::string prevHash; // Hash del bloque anterior en la cadena
-    Radix::RandomXHash merkleRoot; // Raíz del árbol Merkle de transacciones
-    unsigned int difficultyTarget; // Objetivo de dificultad para la minería
-    long long nonce; // Valor numérico utilizado para encontrar el hash válido (prueba de trabajo)
-    std::string hash; // Hash del bloque actual
-    std::vector<Radix::Transaction> transactions; // Lista de transacciones incluidas en este bloque
+    // Constructor
+    Block(uint64_t version, const std::string& prevHash, const std::vector<Transaction>& transactions,
+          unsigned int difficulty, RandomXContext& rxContext_ref);
 
-    // Calcula el hash del encabezado del bloque.
-    std::string calculateHash() const; // Ya no necesita rxContext como parámetro, usa la referencia miembro.
-    // Mina el bloque (encuentra un nonce válido).
-    void mineBlock(unsigned int difficulty); // Ya no necesita rxContext como parámetro, usa la referencia miembro.
-    // Comprueba si el hash del bloque cumple con el objetivo de dificultad.
-    bool checkDifficulty(unsigned int difficulty) const;
-    // Valida la integridad del bloque (hashes, transacciones, etc.).
-    // Ahora toma el UTXOSet para validar las transacciones.
-    bool isValid(const std::map<std::string, TransactionOutput>& utxoSet) const; 
-    // Convierte el bloque a una representación de cadena para visualización.
-    std::string toString() const; // Ya no necesita rxContext como parámetro, usa la referencia miembro.
+    // Calcula el hash del bloque usando RandomX
+    std::string calculateHash() const;
+
+    // Realiza la Prueba de Trabajo (Proof of Work)
+    void mineBlock(unsigned int difficulty);
+
+    // Convierte el bloque a una representación de cadena para impresión/depuración
+    std::string toString() const;
+
+    // Valida la integridad de un bloque (incluyendo sus transacciones)
+    // Recibe una referencia al contexto de RandomX y el UTXO set actual para validación de transacciones
+    bool isValid(RandomXContext& rxContext_ref, const std::map<std::string, TransactionOutput>& utxoSet) const;
+
 
 private:
-    const RandomXContext& rxContext_; // Referencia al contexto RandomX
+    // Referencia al contexto de RandomX para hashing
+    RandomXContext& rxContext_;
 
-    // Actualiza la raíz de Merkle del bloque a partir de sus transacciones.
-    void updateMerkleRoot(); 
+    // Calcula la raíz de Merkle para las transacciones del bloque
+    std::string calculateMerkleRoot() const;
+
+    // Función auxiliar para construir el árbol de Merkle
+    std::string buildMerkleTree(const std::vector<std::string>& hashes) const;
 };
 
 } // namespace Radix
