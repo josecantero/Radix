@@ -1,0 +1,3 @@
+/media/kabudev/Seagate Expansion Drive/Radix/build/CMakeFiles/radix_blockchain.dir
+/media/kabudev/Seagate Expansion Drive/Radix/build/CMakeFiles/edit_cache.dir
+/media/kabudev/Seagate Expansion Drive/Radix/build/CMakeFiles/rebuild_cache.dir
