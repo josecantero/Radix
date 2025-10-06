@@ -4,54 +4,17 @@
 #include <memory> // Para std::unique_ptr
 #include <map>    // Para std::map
 #include <cstdint> // Para uint64_t
-#include <sstream> // Para std::stringstream en la función de formato
-#include <iomanip> // Para std::setfill, std::setw en la función de formato
 
 #include "blockchain.h"
 #include "block.h"
 #include "transaction.h"
 #include "crypto.h"       // Para KeyPair
 #include "randomx_util.h" // Para RandomXContext
-#include "money_util.h"   // Para RDX_DECIMAL_FACTOR y formatRadsToRDX
 
 // ¡NUEVAS INCLUSIONES!
 #include "base58.h"         // Para Radix::Base58::encode
 #include <openssl/provider.h> // Para OSSL_PROVIDER_load
-
-// ====================================================================
-// UTILIDADES TEMPORALES PARA EL MANEJO DE MONEDA (Mover a constants.h)
-// ====================================================================
-
-// Factor de conversión (1 RDX = 100,000,000 rads)
-const uint64_t RDX_DECIMAL_FACTOR = 100000000ULL; 
-
-// Función auxiliar para convertir uint64_t (rads) a string con decimales (RDX)
-std::string formatRadsToRDX(uint64_t rads) {
-    if (rads == 0) {
-        return "0.0";
-    }
-    
-    uint64_t integerPart = rads / RDX_DECIMAL_FACTOR;
-    uint64_t decimalPart = rads % RDX_DECIMAL_FACTOR;
-
-    std::stringstream ss;
-    ss << integerPart << ".";
-
-    ss << std::setfill('0') << std::setw(8) << decimalPart;
-    
-    std::string result = ss.str();
-    
-    size_t end = result.find_last_not_of('0');
-    if (end != std::string::npos && result[end] != '.') {
-        result.resize(end + 1);
-    } else if (end != std::string::npos && result[end] == '.') {
-        result.pop_back(); 
-    }
-    
-    return result;
-}
-
-// ====================================================================
+#include "money_util.h"     // ¡NUEVO! Para RDX_DECIMAL_FACTOR y formatRadsToRDX
 
 // Función para inicializar los proveedores de OpenSSL
 void initializeOpenSSL() {
@@ -76,7 +39,7 @@ int main() {
     Radix::RandomXContext rxContext;
 
     // Crear una instancia de la blockchain con una dificultad de 1
-    Radix::Blockchain radixChain(3, rxContext); // Pasamos la referencia a rxContext
+    Radix::Blockchain radixChain(1, rxContext); // Pasamos la referencia a rxContext
 
     // Imprimir información del Bloque Génesis
     std::cout << "--- Información del Bloque Genesis ---\n";
@@ -84,8 +47,8 @@ int main() {
 
 
     // --- Demostración de Criptografía (OpenSSL) ---
-    // ... (Código de criptografía omitido por brevedad, no necesita cambios)
-    
+    std::cout << "--- Demostración de Criptografía (OpenSSL) ---\n";
+
     // Generar un par de claves para Alice
     Radix::KeyPair aliceKeys;
     std::cout << "Generando par de claves para Alice:\n";
@@ -100,7 +63,29 @@ int main() {
     std::cout << "  Public Key (Hex):    " << Radix::toHexString(bobKeys.getPublicKey()) << "\n";
     std::cout << "  Address:             " << bobKeys.getAddress() << "\n\n";
 
-    // ... (Resto de demostración de firma)
+    // Demostración de firma y verificación
+    std::string message = "Este es un mensaje de prueba para la firma digital.";
+    Radix::RandomXHash messageHash = Radix::SHA256(message);
+    std::cout << "Mensaje original para firmar: \"" << message << "\"\n";
+    std::cout << "Hash del mensaje (para firma): " << Radix::toHexString(messageHash) << "\n";
+
+    Radix::Signature aliceSignature = aliceKeys.sign(messageHash);
+    std::cout << "Firma de Alice: " << Radix::toHexString(aliceSignature) << "\n";
+
+    if (Radix::KeyPair::verify(aliceKeys.getPublicKey(), messageHash, aliceSignature)) {
+        std::cout << "VERIFICACION DE FIRMA: Exitosa! La firma es valida.\n\n";
+    } else {
+        std::cout << "VERIFICACION DE FIRMA: Fallida! La firma NO es valida.\n\n";
+    }
+
+    // Intentar verificar la firma de Alice con la clave pública de Bob (debería fallar)
+    std::cout << "Intentando verificar la firma de Alice con la clave publica de Bob (esperado: FALLO)...\n";
+    if (Radix::KeyPair::verify(bobKeys.getPublicKey(), messageHash, aliceSignature)) {
+        std::cout << "VERIFICACION DE FIRMA (con clave de Bob): Exitosa! (Incorrecto)\n\n";
+    } else {
+        std::cout << "VERIFICACION DE FIRMA (con clave de Bob): Fallida! (Correcto)\n\n";
+    }
+
 
     // --- Demostración de Transacciones y Minería (con UTXO) ---
     std::cout << "--- Demostracion de Transacciones y Mineria (con UTXO) ---\n\n";
@@ -108,8 +93,8 @@ int main() {
     // Minar un bloque para Alice para darle fondos (recompensa de minería)
     std::cout << "Minando un bloque inicial para Alice para darle fondos...\n";
     radixChain.minePendingTransactions(aliceKeys.getAddress());
-    // CORRECCIÓN: Usar formatRadsToRDX para imprimir el balance
-    std::cout << "Bloque inicial minado para Alice. Balance de Alice: " << formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n\n";
+    // Corrección: Usar Radix::formatRadsToRDX
+    std::cout << "Bloque inicial minado para Alice. Balance de Alice: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n\n";
 
     // Imprimir el Bloque #1 (el primer bloque minado)
     std::cout << "--- Informacion del Bloque #1 ---\n";
@@ -121,8 +106,8 @@ int main() {
     std::vector<Radix::TransactionInput> tx1_inputs;
     std::vector<Radix::TransactionOutput> tx1_outputs;
 
-    // CAMBIO CRÍTICO: Monto a enviar en uint64_t (rads)
-    uint64_t amountToSendTx1 = 5ULL * RDX_DECIMAL_FACTOR; // 5 RDX en rads
+    // Corrección: Usar Radix::RDX_DECIMAL_FACTOR
+    uint64_t amountToSendTx1 = 5ULL * Radix::RDX_DECIMAL_FACTOR; // 5 RDX en rads
     uint64_t aliceInitialBalance = radixChain.getBalanceOfAddress(aliceKeys.getAddress());
 
     // Alice gasta su UTXO de la recompensa de minería (del Bloque #1)
@@ -132,12 +117,9 @@ int main() {
     tx1_inputs.push_back({aliceCoinbaseTxId, aliceCoinbaseOutputIndex, aliceKeys.getPublicKey(), Radix::Signature()}); // Firma vacía por ahora
 
     // Salidas: Monto para Bob y el cambio de vuelta a Alice
-    // CORRECCIÓN: Usar amountToSendTx1
     tx1_outputs.push_back({amountToSendTx1, bobKeys.getAddress()}); 
-    // CORRECCIÓN: Usar aritmética de uint64_t
     tx1_outputs.push_back({aliceInitialBalance - amountToSendTx1, aliceKeys.getAddress()}); // Cambio de vuelta a Alice
 
-    // El tercer argumento 'false' fue eliminado en la versión corregida de Transaction::Transaction
     Radix::Transaction tx1(tx1_inputs, tx1_outputs);
     tx1.sign(aliceKeys.getPrivateKey(), aliceKeys.getPublicKey(), radixChain.getUtxoSet()); // Alice firma la transacción
 
@@ -162,10 +144,9 @@ int main() {
     std::vector<Radix::TransactionOutput> tx_spent_utxo_outputs;
 
     tx_spent_utxo_inputs.push_back({aliceCoinbaseTxId, aliceCoinbaseOutputIndex, aliceKeys.getPublicKey(), Radix::Signature()});
-    // CORRECCIÓN: Usar uint64_t (1 RDX)
-    tx_spent_utxo_outputs.push_back({1ULL * RDX_DECIMAL_FACTOR, bobKeys.getAddress()});
+    // Corrección: Usar Radix::RDX_DECIMAL_FACTOR
+    tx_spent_utxo_outputs.push_back({1ULL * Radix::RDX_DECIMAL_FACTOR, bobKeys.getAddress()});
 
-    // El tercer argumento 'false' fue eliminado en la versión corregida de Transaction::Transaction
     Radix::Transaction tx_spent_utxo(tx_spent_utxo_inputs, tx_spent_utxo_outputs);
     
     try {
@@ -189,34 +170,30 @@ int main() {
 
     // Obtenemos la UTXO que Bob recibió
     std::string utxoKeyBob = bobReceivedTxId + ":" + std::to_string(bobOutputIndex);
-    // CORRECCIÓN: bobInputAmount es uint64_t
     uint64_t bobInputAmount = 0; 
     auto it_bob_utxo = radixChain.getUtxoSet().find(utxoKeyBob);
 
     if (it_bob_utxo != radixChain.getUtxoSet().end()) {
-        // La cantidad ya es uint64_t
         bobInputAmount = it_bob_utxo->second.amount;
     } else {
         std::cerr << "Error: La UTXO de Bob (" << utxoKeyBob << ") no se encontró en el UTXO Set." << std::endl;
         return 1; 
     }
 
-    // CORRECCIÓN: Monto a enviar en uint64_t (rads)
-    uint64_t amountToSend = 2ULL * RDX_DECIMAL_FACTOR; // 2 RDX
+    // Corrección: Usar Radix::RDX_DECIMAL_FACTOR
+    uint64_t amountToSend = 2ULL * Radix::RDX_DECIMAL_FACTOR; // 2 RDX
 
     // Asegurarse de que Bob tiene suficientes fondos en esa UTXO
     if (bobInputAmount < amountToSend) {
-        // CORRECCIÓN: Usar formatRadsToRDX para el mensaje de error
-        std::cerr << "Error: Bob no tiene suficientes fondos en la UTXO seleccionada para enviar " << formatRadsToRDX(amountToSend) << " RDX." << std::endl;
+        // Corrección: Usar Radix::formatRadsToRDX para el mensaje de error
+        std::cerr << "Error: Bob no tiene suficientes fondos en la UTXO seleccionada para enviar " << Radix::formatRadsToRDX(amountToSend) << " RDX." << std::endl;
         return 1;
     }
 
     tx2_inputs.push_back({bobReceivedTxId, static_cast<uint64_t>(bobOutputIndex), bobKeys.getPublicKey(), Radix::Signature()}); // Gasta la UTXO de Bob
 
     // Salidas: Monto para Alice y el cambio de vuelta a Bob
-    // CORRECCIÓN: Usar amountToSend (uint64_t)
     tx2_outputs.push_back({amountToSend, aliceKeys.getAddress()});
-    // CORRECCIÓN: Usar aritmética de uint64_t
     tx2_outputs.push_back({bobInputAmount - amountToSend, bobKeys.getAddress()}); // Cambio de vuelta a Bob
 
 
@@ -252,9 +229,9 @@ int main() {
 
     // Balances finales
     std::cout << "--- Balances Finales ---\n";
-    // CORRECCIÓN CRÍTICA: Usar formatRadsToRDX para imprimir el balance
-    std::cout << "Balance de Alice: " << formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n";
-    std::cout << "Balance de Bob: " << formatRadsToRDX(radixChain.getBalanceOfAddress(bobKeys.getAddress())) << " RDX\n";
+    // Corrección: Usar Radix::formatRadsToRDX para imprimir el balance
+    std::cout << "Balance de Alice: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n";
+    std::cout << "Balance de Bob: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(bobKeys.getAddress())) << " RDX\n";
 
     std::cout << "\n¡Radix Blockchain Core finalizado!\n";
 
