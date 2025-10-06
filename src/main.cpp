@@ -12,6 +12,7 @@
 #include "transaction.h"
 #include "crypto.h"       // Para KeyPair
 #include "randomx_util.h" // Para RandomXContext
+#include "money_util.h"   // Para RDX_DECIMAL_FACTOR y formatRadsToRDX
 
 // ¡NUEVAS INCLUSIONES!
 #include "base58.h"         // Para Radix::Base58::encode

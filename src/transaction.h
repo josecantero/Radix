@@ -27,11 +27,11 @@ struct TransactionInput {
 };
 
 struct TransactionOutput {
-    uint64_t amount;          // Cantidad de monedas
+    uint64_t amount;          // Cantidad de monedas (en rads)
     std::string recipientAddress; // Dirección del destinatario
 
     // Constructor por defecto
-    TransactionOutput() : amount(0) {}
+    TransactionOutput() : amount(0ULL) {} // Inicializar a 0ULL
 
     // Constructor con parámetros
     TransactionOutput(uint64_t amount, const std::string& recipientAddress)
@@ -62,7 +62,6 @@ public:
     bool isValid(const std::map<std::string, TransactionOutput>& utxoSet) const;
 
     // Convierte la transacción a una representación de cadena para impresión/depuración
-    // ¡CORRECCIÓN AQUÍ! Añadir parámetro opcional para indentación
     std::string toString(bool indent = false) const;
 
 private:
