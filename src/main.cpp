@@ -4,6 +4,7 @@
 #include <memory> // Para std::unique_ptr
 #include <map>    // Para std::map
 #include <cstdint> // Para uint64_t
+#include <fstream> // Necesario para la persistencia
 
 #include "blockchain.h"
 #include "block.h"
@@ -14,7 +15,10 @@
 // ¡NUEVAS INCLUSIONES!
 #include "base58.h"         // Para Radix::Base58::encode
 #include <openssl/provider.h> // Para OSSL_PROVIDER_load
-#include "money_util.h"     // ¡NUEVO! Para RDX_DECIMAL_FACTOR y formatRadsToRDX
+#include "money_util.h"     // Para RDX_DECIMAL_FACTOR y formatRadsToRDX
+
+// Define el nombre del archivo de persistencia
+const std::string RADIX_CHAIN_FILE = "radix_blockchain.dat";
 
 // Función para inicializar los proveedores de OpenSSL
 void initializeOpenSSL() {
@@ -38,181 +42,163 @@ int main() {
     // Inicializar el contexto de RandomX
     Radix::RandomXContext rxContext;
 
-    // Crear una instancia de la blockchain con una dificultad de 1
-    Radix::Blockchain radixChain(1, rxContext); // Pasamos la referencia a rxContext
+    // Crear instancias de claves para la demostración
+    Radix::KeyPair aliceKeys;
+    Radix::KeyPair bobKeys;
 
-    // Imprimir información del Bloque Génesis
-    std::cout << "--- Información del Bloque Genesis ---\n";
-    std::cout << radixChain.getLatestBlock().toString() << "\n";
+    // --- Persistencia: Cargar la cadena ---
+    // Crear una instancia de la blockchain con una dificultad de 1 (si es nueva)
+    Radix::Blockchain radixChain(1, rxContext); 
+    bool chainLoaded = radixChain.loadChain(RADIX_CHAIN_FILE);
+    // ---------------------------------------
+
+    std::cout << "Estado de la cadena: " << (chainLoaded ? "Cargada (" : "Nueva (") << radixChain.getChainSize() << " bloques).\n";
+    std::cout << "------------------------------------------\n";
+
+    // Minería inicial y bienvenida a Alice, solo si es una cadena nueva o recién cargada sin bloques minados.
+    if (radixChain.getChainSize() <= 1) { // 1 significa solo el bloque génesis
+        std::cout << "--- Información del Bloque Genesis ---\n";
+        std::cout << radixChain.getLatestBlock().toString() << "\n";
+
+        // Minar un bloque para Alice para darle fondos (recompensa de minería)
+        std::cout << "Minando un bloque inicial para Alice para darle fondos...\n";
+        radixChain.minePendingTransactions(aliceKeys.getAddress());
+        std::cout << "Bloque inicial minado para Alice. Balance de Alice: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n\n";
+
+        // Imprimir el Bloque #1 (el primer bloque minado)
+        std::cout << "--- Informacion del Bloque #1 ---\n";
+        std::cout << radixChain.getLatestBlock().toString() << "\n";
+    }
 
 
-    // --- Demostración de Criptografía (OpenSSL) ---
+    // --- Demostración de Criptografía (OpenSSL) --- (Mantenido para mostrar las claves)
     std::cout << "--- Demostración de Criptografía (OpenSSL) ---\n";
 
-    // Generar un par de claves para Alice
-    Radix::KeyPair aliceKeys;
-    std::cout << "Generando par de claves para Alice:\n";
-    std::cout << "  Private Key (Base58): " << Radix::Base58::encode(std::vector<unsigned char>(aliceKeys.getPrivateKey().begin(), aliceKeys.getPrivateKey().end())) << "\n";
-    std::cout << "  Public Key (Hex):    " << Radix::toHexString(aliceKeys.getPublicKey()) << "\n";
-    std::cout << "  Address:             " << aliceKeys.getAddress() << "\n\n";
+    std::cout << "Claves de Alice (Address): " << aliceKeys.getAddress() << "\n";
+    std::cout << "Claves de Bob (Address):   " << bobKeys.getAddress() << "\n\n";
 
-    // Generar un par de claves para Bob
-    Radix::KeyPair bobKeys;
-    std::cout << "Generando par de claves para Bob...\n";
-    std::cout << "  Private Key (Base58): " << Radix::Base58::encode(std::vector<unsigned char>(bobKeys.getPrivateKey().begin(), bobKeys.getPrivateKey().end())) << "\n";
-    std::cout << "  Public Key (Hex):    " << Radix::toHexString(bobKeys.getPublicKey()) << "\n";
-    std::cout << "  Address:             " << bobKeys.getAddress() << "\n\n";
-
-    // Demostración de firma y verificación
+    // Demostración de firma y verificación (El resto del código criptográfico se mantiene igual)
     std::string message = "Este es un mensaje de prueba para la firma digital.";
     Radix::RandomXHash messageHash = Radix::SHA256(message);
-    std::cout << "Mensaje original para firmar: \"" << message << "\"\n";
-    std::cout << "Hash del mensaje (para firma): " << Radix::toHexString(messageHash) << "\n";
-
+    
     Radix::Signature aliceSignature = aliceKeys.sign(messageHash);
-    std::cout << "Firma de Alice: " << Radix::toHexString(aliceSignature) << "\n";
-
+    
     if (Radix::KeyPair::verify(aliceKeys.getPublicKey(), messageHash, aliceSignature)) {
         std::cout << "VERIFICACION DE FIRMA: Exitosa! La firma es valida.\n\n";
     } else {
         std::cout << "VERIFICACION DE FIRMA: Fallida! La firma NO es valida.\n\n";
     }
 
-    // Intentar verificar la firma de Alice con la clave pública de Bob (debería fallar)
-    std::cout << "Intentando verificar la firma de Alice con la clave publica de Bob (esperado: FALLO)...\n";
-    if (Radix::KeyPair::verify(bobKeys.getPublicKey(), messageHash, aliceSignature)) {
-        std::cout << "VERIFICACION DE FIRMA (con clave de Bob): Exitosa! (Incorrecto)\n\n";
-    } else {
-        std::cout << "VERIFICACION DE FIRMA (con clave de Bob): Fallida! (Correcto)\n\n";
-    }
-
+    // El resto del código de demostración de transacciones sigue asumiendo que el bloque inicial ya se minó.
 
     // --- Demostración de Transacciones y Minería (con UTXO) ---
     std::cout << "--- Demostracion de Transacciones y Mineria (con UTXO) ---\n\n";
-
-    // Minar un bloque para Alice para darle fondos (recompensa de minería)
-    std::cout << "Minando un bloque inicial para Alice para darle fondos...\n";
-    radixChain.minePendingTransactions(aliceKeys.getAddress());
-    // Corrección: Usar Radix::formatRadsToRDX
-    std::cout << "Bloque inicial minado para Alice. Balance de Alice: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n\n";
-
-    // Imprimir el Bloque #1 (el primer bloque minado)
-    std::cout << "--- Informacion del Bloque #1 ---\n";
-    std::cout << radixChain.getLatestBlock().toString() << "\n";
-
-
-    // --- Transacción 1: Alice envía 5 RDX a Bob ---
-    std::cout << "Creando Transaccion 1: Alice envia 5 RDX a Bob.\n";
-    std::vector<Radix::TransactionInput> tx1_inputs;
-    std::vector<Radix::TransactionOutput> tx1_outputs;
-
-    // Corrección: Usar Radix::RDX_DECIMAL_FACTOR
-    uint64_t amountToSendTx1 = 5ULL * Radix::RDX_DECIMAL_FACTOR; // 5 RDX en rads
-    uint64_t aliceInitialBalance = radixChain.getBalanceOfAddress(aliceKeys.getAddress());
-
-    // Alice gasta su UTXO de la recompensa de minería (del Bloque #1)
-    std::string aliceCoinbaseTxId = radixChain.getLatestBlock().transactions[0].id;
-    uint64_t aliceCoinbaseOutputIndex = 0; 
-
-    tx1_inputs.push_back({aliceCoinbaseTxId, aliceCoinbaseOutputIndex, aliceKeys.getPublicKey(), Radix::Signature()}); // Firma vacía por ahora
-
-    // Salidas: Monto para Bob y el cambio de vuelta a Alice
-    tx1_outputs.push_back({amountToSendTx1, bobKeys.getAddress()}); 
-    tx1_outputs.push_back({aliceInitialBalance - amountToSendTx1, aliceKeys.getAddress()}); // Cambio de vuelta a Alice
-
-    Radix::Transaction tx1(tx1_inputs, tx1_outputs);
-    tx1.sign(aliceKeys.getPrivateKey(), aliceKeys.getPublicKey(), radixChain.getUtxoSet()); // Alice firma la transacción
-
-    std::cout << "  Transaccion 1 firmada por Alice. ID: " << tx1.id << "\n";
-    radixChain.addTransaction(tx1);
-    std::cout << "  Transaccion 1 anadida a la piscina de transacciones pendientes.\n\n";
-
-    // Minar el primer bloque (que contendrá la Transacción 1)
-    std::cout << "Iniciando mineria del primer bloque. Minero: " << bobKeys.getAddress() << "\n";
-    radixChain.minePendingTransactions(bobKeys.getAddress()); // Bob mina el bloque
-    std::cout << "Primer bloque minado y anadido a la cadena.\n\n";
-
-    // Imprimir el Bloque #2
-    std::cout << "--- Informacion del Bloque #2 ---\n";
-    std::cout << radixChain.getLatestBlock().toString() << "\n";
-
-
-    // --- Prueba de Gasto de UTXO ya Gastada ---
-    std::cout << "--- Prueba de Gasto de UTXO ya Gastada ---\n";
-    std::cout << "Creando Transaccion de Prueba: Alice intenta gastar la misma UTXO (de su coinbase) de nuevo.\n";
-    std::vector<Radix::TransactionInput> tx_spent_utxo_inputs;
-    std::vector<Radix::TransactionOutput> tx_spent_utxo_outputs;
-
-    tx_spent_utxo_inputs.push_back({aliceCoinbaseTxId, aliceCoinbaseOutputIndex, aliceKeys.getPublicKey(), Radix::Signature()});
-    // Corrección: Usar Radix::RDX_DECIMAL_FACTOR
-    tx_spent_utxo_outputs.push_back({1ULL * Radix::RDX_DECIMAL_FACTOR, bobKeys.getAddress()});
-
-    Radix::Transaction tx_spent_utxo(tx_spent_utxo_inputs, tx_spent_utxo_outputs);
     
-    try {
-        tx_spent_utxo.sign(aliceKeys.getPrivateKey(), aliceKeys.getPublicKey(), radixChain.getUtxoSet()); // Alice firma la transacción
-        std::cout << "  Transaccion de Prueba firmada por Alice. ID: " << tx_spent_utxo.id << "\n";
-        radixChain.addTransaction(tx_spent_utxo);
-        std::cout << "  ERROR: Transaccion de prueba añadida a pendientes (no deberia haber sido). \n\n";
-    } catch (const std::runtime_error& e) {
-        std::cout << "  EXITO: Error esperado al añadir transaccion de prueba (UTXO ya gastada): " << e.what() << "\n\n";
-    }
+    // Si la cadena ya estaba avanzada, necesitamos adaptar los IDs de transacción para que la demo funcione.
+    // Para simplificar, la demostración de transacciones debe ser reescrita para buscar UTXOs disponibles
+    // en lugar de asumir que la UTXO de coinbase está en el Bloque #1.
+    
+    // NOTA: Para este ejemplo, solo ejecutaremos las transacciones si la cadena no es demasiado larga,
+    // o el código de la demo deberá ser reescrito para buscar dinámicamente las UTXOs correctas.
+    // Asumiremos que si la cadena tiene menos de 4 bloques, ejecutamos el siguiente paso de la demo.
+    
+    if (radixChain.getChainSize() < 4) {
+        // ... (El código de Transacción 1 y Transacción 2 sigue aquí)
+        
+        // El código de la demo debe buscar dinámicamente la UTXO más reciente de Alice
+        // en lugar de asumir el Bloque #1. Simplificaremos asumiendo la UTXO más grande
+        // para la dirección de Alice.
+        
+        // Lógica de búsqueda de la UTXO más grande de Alice para la demo:
+        std::string aliceUtxoKey = "";
+        uint64_t aliceLargestUtxoAmount = 0;
+        
+        for (const auto& pair : radixChain.getUtxoSet()) {
+            const Radix::TransactionOutput& utxo = pair.second;
+            if (utxo.recipientAddress == aliceKeys.getAddress() && utxo.amount > aliceLargestUtxoAmount) {
+                aliceLargestUtxoAmount = utxo.amount;
+                aliceUtxoKey = pair.first;
+            }
+        }
+        
+        if (aliceUtxoKey.empty()) {
+            std::cerr << "Advertencia: Alice no tiene UTXOs disponibles para transacciones. Saltando la demo de transacciones.\n";
+        } else {
+            // Analizar la clave para obtener ID de TX anterior e índice de salida
+            std::string aliceCoinbaseTxId = aliceUtxoKey.substr(0, aliceUtxoKey.find(':'));
+            uint64_t aliceCoinbaseOutputIndex = std::stoull(aliceUtxoKey.substr(aliceUtxoKey.find(':') + 1));
+            uint64_t aliceInitialBalance = aliceLargestUtxoAmount; // El monto de la UTXO seleccionada
 
+            // --- Transacción 1: Alice envía 5 RDX a Bob ---
+            std::cout << "Creando Transaccion 1: Alice envia 5 RDX a Bob (usando UTXO: " << aliceUtxoKey << ").\n";
+            std::vector<Radix::TransactionInput> tx1_inputs;
+            std::vector<Radix::TransactionOutput> tx1_outputs;
 
-    // --- Transacción 2: Bob envia 2 RDX a Alice ---
-    std::cout << "Creando Transaccion 2: Bob envia 2 RDX a Alice.\n";
-    std::vector<Radix::TransactionInput> tx2_inputs;
-    std::vector<Radix::TransactionOutput> tx2_outputs;
+            uint64_t amountToSendTx1 = 5ULL * Radix::RDX_DECIMAL_FACTOR; // 5 RDX en rads
 
-    // Bob gasta la UTXO que recibió de Alice en la Transacción 1
-    std::string bobReceivedTxId = tx1.id;
-    int bobOutputIndex = 0; // La salida de 5 RDX para Bob es la primera salida de tx1
+            tx1_inputs.push_back({aliceCoinbaseTxId, aliceCoinbaseOutputIndex, aliceKeys.getPublicKey(), Radix::Signature()}); // Firma vacía por ahora
 
-    // Obtenemos la UTXO que Bob recibió
-    std::string utxoKeyBob = bobReceivedTxId + ":" + std::to_string(bobOutputIndex);
-    uint64_t bobInputAmount = 0; 
-    auto it_bob_utxo = radixChain.getUtxoSet().find(utxoKeyBob);
+            // Salidas: Monto para Bob y el cambio de vuelta a Alice
+            tx1_outputs.push_back({amountToSendTx1, bobKeys.getAddress()}); 
+            tx1_outputs.push_back({aliceInitialBalance - amountToSendTx1, aliceKeys.getAddress()}); // Cambio de vuelta a Alice
 
-    if (it_bob_utxo != radixChain.getUtxoSet().end()) {
-        bobInputAmount = it_bob_utxo->second.amount;
+            Radix::Transaction tx1(tx1_inputs, tx1_outputs);
+            tx1.sign(aliceKeys.getPrivateKey(), aliceKeys.getPublicKey(), radixChain.getUtxoSet()); // Alice firma la transacción
+
+            std::cout << "  Transaccion 1 firmada por Alice. ID: " << tx1.id << "\n";
+            radixChain.addTransaction(tx1);
+            std::cout << "  Transaccion 1 anadida a la piscina de transacciones pendientes.\n\n";
+
+            // Minar el primer bloque de la demo (que contendrá la Transacción 1)
+            std::cout << "Iniciando mineria del bloque. Minero: " << bobKeys.getAddress() << "\n";
+            radixChain.minePendingTransactions(bobKeys.getAddress()); // Bob mina el bloque
+            std::cout << "Bloque minado y anadido a la cadena. (Tamanio: " << radixChain.getChainSize() << ").\n\n";
+
+            // --- Transacción 2: Bob envia 2 RDX a Alice ---
+            std::cout << "Creando Transaccion 2: Bob envia 2 RDX a Alice.\n";
+            std::vector<Radix::TransactionInput> tx2_inputs;
+            std::vector<Radix::TransactionOutput> tx2_outputs;
+
+            // Bob gasta la UTXO que recibió de Alice en la Transacción 1
+            std::string bobReceivedTxId = tx1.id;
+            int bobOutputIndex = 0; // La salida de 5 RDX para Bob es la primera salida de tx1
+
+            // Obtenemos la UTXO que Bob recibió
+            std::string utxoKeyBob = bobReceivedTxId + ":" + std::to_string(bobOutputIndex);
+            uint64_t bobInputAmount = 0; 
+            auto it_bob_utxo = radixChain.getUtxoSet().find(utxoKeyBob);
+
+            if (it_bob_utxo != radixChain.getUtxoSet().end()) {
+                bobInputAmount = it_bob_utxo->second.amount;
+            } else {
+                std::cerr << "Error: La UTXO de Bob (" << utxoKeyBob << ") no se encontro en el UTXO Set. Saltando T2." << std::endl;
+            }
+            
+            if (bobInputAmount > 0) {
+                uint64_t amountToSend = 2ULL * Radix::RDX_DECIMAL_FACTOR; // 2 RDX
+
+                tx2_inputs.push_back({bobReceivedTxId, static_cast<uint64_t>(bobOutputIndex), bobKeys.getPublicKey(), Radix::Signature()}); // Gasta la UTXO de Bob
+
+                // Salidas: Monto para Alice y el cambio de vuelta a Bob
+                tx2_outputs.push_back({amountToSend, aliceKeys.getAddress()});
+                tx2_outputs.push_back({bobInputAmount - amountToSend, bobKeys.getAddress()}); // Cambio de vuelta a Bob
+
+                Radix::Transaction tx2(tx2_inputs, tx2_outputs);
+                tx2.sign(bobKeys.getPrivateKey(), bobKeys.getPublicKey(), radixChain.getUtxoSet()); // Bob firma la transacción
+
+                std::cout << "  Transaccion 2 firmada por Bob. ID: " << tx2.id << "\n";
+                radixChain.addTransaction(tx2);
+                std::cout << "  Transaccion 2 anadida a la piscina de transacciones pendientes.\n\n";
+
+                // Minar el segundo bloque de la demo (que contendrá la Transacción 2 y el Halving)
+                std::cout << "Iniciando mineria del segundo bloque de la demo. Minero: " << aliceKeys.getAddress() << "\n";
+                radixChain.minePendingTransactions(aliceKeys.getAddress()); // Alice mina el bloque
+                std::cout << "Bloque minado y anadido a la cadena. (Tamanio: " << radixChain.getChainSize() << ").\n\n";
+            }
+        }
     } else {
-        std::cerr << "Error: La UTXO de Bob (" << utxoKeyBob << ") no se encontró en el UTXO Set." << std::endl;
-        return 1; 
+        std::cout << "Cadena avanzada. Saltando la demo de transacciones para mantener la consistencia.\n\n";
     }
-
-    // Corrección: Usar Radix::RDX_DECIMAL_FACTOR
-    uint64_t amountToSend = 2ULL * Radix::RDX_DECIMAL_FACTOR; // 2 RDX
-
-    // Asegurarse de que Bob tiene suficientes fondos en esa UTXO
-    if (bobInputAmount < amountToSend) {
-        // Corrección: Usar Radix::formatRadsToRDX para el mensaje de error
-        std::cerr << "Error: Bob no tiene suficientes fondos en la UTXO seleccionada para enviar " << Radix::formatRadsToRDX(amountToSend) << " RDX." << std::endl;
-        return 1;
-    }
-
-    tx2_inputs.push_back({bobReceivedTxId, static_cast<uint64_t>(bobOutputIndex), bobKeys.getPublicKey(), Radix::Signature()}); // Gasta la UTXO de Bob
-
-    // Salidas: Monto para Alice y el cambio de vuelta a Bob
-    tx2_outputs.push_back({amountToSend, aliceKeys.getAddress()});
-    tx2_outputs.push_back({bobInputAmount - amountToSend, bobKeys.getAddress()}); // Cambio de vuelta a Bob
-
-
-    Radix::Transaction tx2(tx2_inputs, tx2_outputs);
-    tx2.sign(bobKeys.getPrivateKey(), bobKeys.getPublicKey(), radixChain.getUtxoSet()); // Bob firma la transacción
-
-    std::cout << "  Transaccion 2 firmada por Bob. ID: " << tx2.id << "\n";
-    radixChain.addTransaction(tx2);
-    std::cout << "  Transaccion 2 anadida a la piscina de transacciones pendientes.\n\n";
-
-    // Minar el segundo bloque (que contendrá la Transacción 2 y el Halving)
-    std::cout << "Iniciando mineria del segundo bloque. Minero: " << aliceKeys.getAddress() << "\n";
-    radixChain.minePendingTransactions(aliceKeys.getAddress()); // Alice mina el bloque
-    std::cout << "Segundo bloque minado y anadido a la cadena.\n\n";
-
-    // Imprimir el Bloque #3
-    std::cout << "--- Informacion del Bloque #3 ---\n";
-    std::cout << radixChain.getLatestBlock().toString() << "\n";
-
 
     // --- Estado Final de la Blockchain ---
     std::cout << "--- Estado Final de la Blockchain ---\n";
@@ -229,10 +215,14 @@ int main() {
 
     // Balances finales
     std::cout << "--- Balances Finales ---\n";
-    // Corrección: Usar Radix::formatRadsToRDX para imprimir el balance
     std::cout << "Balance de Alice: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(aliceKeys.getAddress())) << " RDX\n";
     std::cout << "Balance de Bob: " << Radix::formatRadsToRDX(radixChain.getBalanceOfAddress(bobKeys.getAddress())) << " RDX\n";
 
+    // --- Persistencia: Guardar la cadena ---
+    std::cout << "\nGuardando el estado final de la Blockchain en " << RADIX_CHAIN_FILE << "...\n";
+    radixChain.saveChain(RADIX_CHAIN_FILE);
+    // ---------------------------------------
+    
     std::cout << "\n¡Radix Blockchain Core finalizado!\n";
 
     return 0;

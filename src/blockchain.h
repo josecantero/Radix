@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <map>    // Para el UTXOSet
+#include <fstream>  // Para la gestión de archivos (persistenca)
 
 #include "block.h"        // Incluir la definición de Block
 #include "transaction.h"  // Incluir la definición de Transaction
@@ -38,7 +39,6 @@ public:
     bool isChainValid() const;
 
     // Imprime todos los bloques en la cadena
-    // Ahora recibe el RandomXContext para el toString de bloques
     void printChain() const;
 
     // Obtiene el último bloque de la cadena
@@ -47,8 +47,18 @@ public:
     // Nuevo método: Obtiene el tamaño actual de la cadena (número de bloques)
     size_t getChainSize() const;
 
-    // ¡NUEVO! Getter público para el UTXO Set
+    // Getter público para el UTXO Set
     const std::map<std::string, TransactionOutput>& getUtxoSet() const { return utxoSet; }
+
+    // ----------------------------------------------------------------------
+    // MÉTODOS DE PERSISTENCIA BINARIA ¡NUEVO!
+    // ----------------------------------------------------------------------
+    // Guarda la cadena de bloques en un archivo binario.
+    void saveChain(const std::string& filename) const;
+    
+    // Carga la cadena de bloques desde un archivo binario y reconstruye el UTXO Set.
+    // Retorna true si la carga fue exitosa y la cadena es válida.
+    bool loadChain(const std::string& filename);
 
 
 private:
@@ -56,7 +66,7 @@ private:
     std::vector<Transaction> pendingTransactions;
     unsigned int difficulty;
     uint64_t currentMiningReward; // Recompensa de minería actual (para el halving)
-    Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX (no const para poder pasarlo a métodos)
+    Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX
     std::map<std::string, TransactionOutput> utxoSet; // Conjunto de UTXO globales
 
     // Crea el bloque génesis
@@ -64,7 +74,6 @@ private:
     // Actualiza el UTXOSet con las transacciones de un nuevo bloque
     void updateUtxoSet(const Block& block);
     // Reinicia el UTXOSet y lo reconstruye a partir de la cadena actual
-    // Este método es útil para la reconstrucción del estado, pero no está directamente ligado a la persistencia JSON.
     void rebuildUtxoSet();
 };
 

@@ -2,7 +2,8 @@
 #include "transaction.h"
 #include "crypto.h" // Para Radix::KeyPair, Radix::SHA256, Radix::toHexString
 #include "randomx_util.h" // Para toHexString
-#include "money_util.h" // ¡NUEVO! Para formatRadsToRDX
+#include "money_util.h" // Para formatRadsToRDX
+#include "persistence_util.h" // Para serialización binaria
 
 #include <iostream>
 #include <sstream>
@@ -240,12 +241,91 @@ std::string Transaction::toString(bool indent) const {
 
     ss << prefix << "Outputs (" << outputs.size() << "):\n";
     for (const auto& output : outputs) {
-        // CORRECCIÓN CRÍTICA: Usar formatRadsToRDX en lugar de la impresión de double
         ss << prefix << "  Amount: " << Radix::formatRadsToRDX(output.amount) << " RDX\n"
            << prefix << "  Recipient: " << output.recipientAddress << "\n";
     }
 
     return ss.str();
+}
+
+// --------------------------------------------------------------------------------
+// Métodos de Persistencia Binaria (TransactionInput)
+// --------------------------------------------------------------------------------
+
+void TransactionInput::serialize(std::fstream& fs) const {
+    Persistence::writeString(fs, prevTxId);
+    Persistence::writePrimitive(fs, outputIndex);
+    
+    // PublicKey y Signature son std::vector<uint8_t>
+    Persistence::writeVector(fs, pubKey);
+    Persistence::writeVector(fs, signature);
+}
+
+void TransactionInput::deserialize(std::fstream& fs) {
+    prevTxId = Persistence::readString(fs);
+    outputIndex = Persistence::readPrimitive<uint64_t>(fs);
+    
+    pubKey = Persistence::readVector(fs);
+    signature = Persistence::readVector(fs);
+}
+
+// --------------------------------------------------------------------------------
+// Métodos de Persistencia Binaria (TransactionOutput)
+// --------------------------------------------------------------------------------
+
+void TransactionOutput::serialize(std::fstream& fs) const {
+    // amount es uint64_t
+    Persistence::writePrimitive(fs, amount);
+    Persistence::writeString(fs, recipientAddress);
+}
+
+void TransactionOutput::deserialize(std::fstream& fs) {
+    amount = Persistence::readPrimitive<uint64_t>(fs);
+    recipientAddress = Persistence::readString(fs);
+}
+
+// --------------------------------------------------------------------------------
+// Métodos de Persistencia Binaria (Transaction)
+// --------------------------------------------------------------------------------
+
+void Transaction::serialize(std::fstream& fs) const {
+    Persistence::writeString(fs, id);
+    Persistence::writePrimitive(fs, timestamp);
+    Persistence::writePrimitive(fs, isCoinbase);
+
+    // Serializar Inputs
+    size_t inputCount = inputs.size();
+    Persistence::writePrimitive(fs, inputCount);
+    for (const auto& input : inputs) {
+        input.serialize(fs);
+    }
+
+    // Serializar Outputs
+    size_t outputCount = outputs.size();
+    Persistence::writePrimitive(fs, outputCount);
+    for (const auto& output : outputs) {
+        output.serialize(fs);
+    }
+}
+
+void Transaction::deserialize(std::fstream& fs) {
+    id = Persistence::readString(fs);
+    timestamp = Persistence::readPrimitive<long long>(fs);
+    isCoinbase = Persistence::readPrimitive<bool>(fs);
+
+    // Deserializar Inputs
+    size_t inputCount = Persistence::readPrimitive<size_t>(fs);
+    inputs.resize(inputCount);
+    for (size_t i = 0; i < inputCount; ++i) {
+        inputs[i].deserialize(fs);
+    }
+
+    // Deserializar Outputs
+    size_t outputCount = Persistence::readPrimitive<size_t>(fs);
+    outputs.resize(outputCount);
+    for (size_t i = 0; i < outputCount; ++i) {
+        outputs[i].deserialize(fs);
+    }
 }
 
 } // namespace Radix

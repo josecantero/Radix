@@ -46,6 +46,7 @@ add_executable(radix_blockchain
     src/randomx_util.cpp
     src/base58.cpp
     src/money_util.cpp
+    src/persistence_util.cpp
 )
 
 # Enlazar bibliotecas

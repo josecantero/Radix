@@ -6,10 +6,22 @@
 #include <vector>
 #include <map> // Para std::map en isValid
 #include <cstdint> // Para uint64_t
+#include <fstream> // Para serialización
 
 #include "crypto.h" // Para Radix::PublicKey, Radix::Signature, Radix::RandomXHash
 
 namespace Radix {
+
+// Declaración anticipada de las clases y utilidades de persistencia
+namespace Persistence {
+    // Declaraciones de funciones de serialización necesarias (para evitar incluir persistence_util.h)
+    template <typename T> void writePrimitive(std::fstream& fs, const T& data);
+    template <typename T> T readPrimitive(std::fstream& fs);
+    void writeString(std::fstream& fs, const std::string& str);
+    std::string readString(std::fstream& fs);
+    void writeVector(std::fstream& fs, const std::vector<uint8_t>& vec);
+    std::vector<uint8_t> readVector(std::fstream& fs);
+}
 
 // Estructuras para las entradas y salidas de transacciones
 struct TransactionInput {
@@ -24,6 +36,10 @@ struct TransactionInput {
     // Constructor con parámetros
     TransactionInput(const std::string& prevTxId, uint64_t outputIndex, const PublicKey& pubKey, const Signature& signature)
         : prevTxId(prevTxId), outputIndex(outputIndex), pubKey(pubKey), signature(signature) {}
+    
+    // Métodos de Persistencia Binaria
+    void serialize(std::fstream& fs) const;
+    void deserialize(std::fstream& fs);
 };
 
 struct TransactionOutput {
@@ -36,6 +52,10 @@ struct TransactionOutput {
     // Constructor con parámetros
     TransactionOutput(uint64_t amount, const std::string& recipientAddress)
         : amount(amount), recipientAddress(recipientAddress) {}
+
+    // Métodos de Persistencia Binaria
+    void serialize(std::fstream& fs) const;
+    void deserialize(std::fstream& fs);
 };
 
 class Transaction {
@@ -48,6 +68,8 @@ public:
 
     // Constructor para transacciones normales
     Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs);
+    // Constructor vacío para deserialización
+    Transaction() : timestamp(0), isCoinbase(false) {}
 
     // Constructor para transacciones coinbase
     Transaction(const std::string& recipientAddress, uint64_t amount, bool isCoinbase = true);
@@ -63,6 +85,10 @@ public:
 
     // Convierte la transacción a una representación de cadena para impresión/depuración
     std::string toString(bool indent = false) const;
+
+    // Métodos de Persistencia Binaria
+    void serialize(std::fstream& fs) const;
+    void deserialize(std::fstream& fs);
 
 private:
     // Método auxiliar para calcular el hash de la transacción

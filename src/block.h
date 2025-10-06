@@ -7,14 +7,21 @@
 #include <cstdint> // Para uint64_t
 #include <chrono>  // Para std::chrono::system_clock
 #include <map>     // Para std::map en isValid
+#include <fstream> // Para serialización binaria
 
 #include "transaction.h"
 #include "randomx_util.h" // Para la declaración de RandomXContext
 
 namespace Radix {
 
-// Declaración anticipada para evitar dependencia circular si es necesario
-// class RandomXContext; // No es necesario si randomx_util.h ya lo declara
+// Declaración anticipada de las clases y utilidades de persistencia
+namespace Persistence {
+    // Declaraciones de funciones de serialización necesarias (para evitar incluir persistence_util.h)
+    template <typename T> void writePrimitive(std::fstream& fs, const T& data);
+    template <typename T> T readPrimitive(std::fstream& fs);
+    void writeString(std::fstream& fs, const std::string& str);
+    std::string readString(std::fstream& fs);
+}
 
 class Block {
 public:
@@ -28,9 +35,16 @@ public:
     std::string hash;
     std::vector<Transaction> transactions; // Lista de transacciones en este bloque
 
-    // Constructor
+    // Constructor normal
     Block(uint64_t version, const std::string& prevHash, const std::vector<Transaction>& transactions,
           unsigned int difficulty, RandomXContext& rxContext_ref);
+
+    // Constructor vacío para deserialización
+    // Nota: La referencia rxContext_ debe ser inicializada en el constructor o manejada externamente.
+    // Por simplicidad, se inicializa la referencia a una instancia temporal si no se usa para minar/validar
+    // hasta que loadChain la reasigne, o se usa el constructor por defecto sin parámetros.
+    // Aquí declaramos el constructor por defecto:
+    Block(); 
 
     // Calcula el hash del bloque usando RandomX
     std::string calculateHash() const;
@@ -42,8 +56,11 @@ public:
     std::string toString() const;
 
     // Valida la integridad de un bloque (incluyendo sus transacciones)
-    // Recibe una referencia al contexto de RandomX y el UTXO set actual para validación de transacciones
     bool isValid(RandomXContext& rxContext_ref, const std::map<std::string, TransactionOutput>& utxoSet) const;
+
+    // Métodos de Persistencia Binaria ¡NUEVO!
+    void serialize(std::fstream& fs) const;
+    void deserialize(std::fstream& fs);
 
 
 private:
