@@ -31,7 +31,7 @@ public:
     void minePendingTransactions(const std::string& miningRewardAddress);
 
     // Obtiene el balance de una dirección específica utilizando el UTXOSet
-    double getBalanceOfAddress(const std::string& address) const;
+    uint64_t getBalanceOfAddress(const std::string& address) const;
 
     // Valida la integridad de toda la cadena
     // Ahora recibe el RandomXContext para la validación de bloques
@@ -55,7 +55,7 @@ private:
     std::vector<Block> chain;
     std::vector<Transaction> pendingTransactions;
     unsigned int difficulty;
-    double currentMiningReward; // Recompensa de minería actual (para el halving)
+    uint64_t currentMiningReward; // Recompensa de minería actual (para el halving)
     Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX (no const para poder pasarlo a métodos)
     std::map<std::string, TransactionOutput> utxoSet; // Conjunto de UTXO globales
 

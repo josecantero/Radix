@@ -14,10 +14,10 @@ namespace Radix {
 // Esta constante debe estar definida SOLO en blockchain.h
 // const unsigned int HALVING_INTERVAL = 2; // Ejemplo: cada 2 bloques (ELIMINAR ESTA LÍNEA SI EXISTE AQUÍ)
 
-
+const uint64_t RDX_DECIMAL_FACTOR = 100000000ULL; // 10^8
 // Constructor de la Blockchain
 Blockchain::Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext_ref)
-    : difficulty(difficulty), currentMiningReward(100.0), rxContext_(rxContext_ref) { // Recompensa de minería inicial y referencia
+    : difficulty(difficulty), currentMiningReward(100ULL * RDX_DECIMAL_FACTOR), rxContext_(rxContext_ref) { // Recompensa de minería inicial y referencia
     // Crea el bloque génesis y lo añade a la cadena
     chain.push_back(createGenesisBlock());
     // Inicializa el UTXO Set con las salidas del bloque génesis
@@ -94,8 +94,8 @@ void Blockchain::minePendingTransactions(const std::string& miningRewardAddress)
 }
 
 // Obtiene el balance de una dirección específica utilizando el UTXOSet
-double Blockchain::getBalanceOfAddress(const std::string& address) const {
-    double balance = 0;
+uint64_t Blockchain::getBalanceOfAddress(const std::string& address) const {
+    uint64_t balance = 0;
     for (const auto& pair : utxoSet) {
         const TransactionOutput& utxo = pair.second;
         if (utxo.recipientAddress == address) {

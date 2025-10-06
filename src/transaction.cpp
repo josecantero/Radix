@@ -8,13 +8,49 @@
 #include <sstream>
 #include <stdexcept>
 #include <algorithm> // Para std::all_of
-#include <iomanip>   // Para std::fixed, std::setprecision
+#include <iomanip>   // Para std::fixed, std::setprecision, std::setfill, std::setw
 #include <chrono>    // Para std::chrono::system_clock
-#include <array>     // ¡NUEVO! Para asegurar la definición completa de std::array
-#include <new>       // ¡NUEVO! Para std::nothrow_t y sobrecargas de operator new
-#include <cstddef>   // ¡NUEVO! Para std::streamsize y otros tipos de definición estándar
+#include <array>     // Para asegurar la definición completa de std::array
+#include <new>       // Para std::nothrow_t y sobrecargas de operator new
+#include <cstddef>   // Para std::streamsize y otros tipos de definición estándar
+#include <cstdint>   // Necesario para uint64_t (aunque ya debería estar en transaction.h)
+
 
 namespace Radix {
+
+// Factor de conversión (1 RDX = 100,000,000 rads)
+// NOTA CRÍTICA: Esta constante debe definirse en un archivo de constantes globalmente (ej. constants.h)
+const uint64_t RDX_DECIMAL_FACTOR = 100000000ULL; 
+
+// Función auxiliar para convertir uint64_t (rads) a string con decimales (RDX)
+// IMPLEMENTACIÓN AÑADIDA
+std::string formatRadsToRDX(uint64_t rads) {
+    if (rads == 0) {
+        return "0.0";
+    }
+    
+    // Obtener la parte entera (RDX) y la parte decimal (rads restantes)
+    uint64_t integerPart = rads / RDX_DECIMAL_FACTOR;
+    uint64_t decimalPart = rads % RDX_DECIMAL_FACTOR;
+
+    std::stringstream ss;
+    ss << integerPart << ".";
+
+    // Formatear la parte decimal con ceros a la izquierda (8 dígitos)
+    ss << std::setfill('0') << std::setw(8) << decimalPart;
+    
+    std::string result = ss.str();
+    
+    // Opcional: Eliminar ceros finales si el monto es entero (ej. 1.50000000 -> 1.5)
+    size_t end = result.find_last_not_of('0');
+    if (end != std::string::npos && result[end] != '.') {
+        result.resize(end + 1);
+    } else if (end != std::string::npos && result[end] == '.') {
+        result.pop_back(); // Eliminar el punto si solo queda un '1.'
+    }
+    
+    return result;
+}
 
 // Constructor para transacciones normales
 Transaction::Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs)
@@ -26,13 +62,14 @@ Transaction::Transaction(const std::vector<TransactionInput>& inputs, const std:
 }
 
 // Constructor para transacciones coinbase
-Transaction::Transaction(const std::string& recipientAddress, double amount, bool isCoinbase)
+// CAMBIO CRÍTICO: double amount -> uint64_t amount
+Transaction::Transaction(const std::string& recipientAddress, uint64_t amount, bool isCoinbase)
     : isCoinbase(isCoinbase) {
     this->timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
     // Las coinbase no tienen inputs
-    outputs.push_back(TransactionOutput(amount, recipientAddress));
+    outputs.push_back(TransactionOutput(amount, recipientAddress)); // amount ahora es uint64_t
     this->id = calculateHash(); // Calcula el ID de la transacción
 }
 
@@ -49,6 +86,7 @@ std::string Transaction::calculateRawHash() const {
         ss << input.prevTxId << input.outputIndex << toHexString(input.pubKey) << toHexString(input.signature);
     }
     for (const auto& output : outputs) {
+        // CORRECCIÓN: output.amount ahora es uint64_t
         ss << output.amount << output.recipientAddress;
     }
     ss << isCoinbase; // Incluir el estado coinbase en el hash
@@ -64,7 +102,8 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
     }
 
     // Verificar que las entradas de la transacción pertenecen al remitente
-    double inputSum = 0;
+    // CAMBIO CRÍTICO: double inputSum -> uint64_t inputSum
+    uint64_t inputSum = 0; 
     for (size_t i = 0; i < inputs.size(); ++i) {
         std::string utxoKey = inputs[i].prevTxId + ":" + std::to_string(inputs[i].outputIndex);
         auto it = utxoSet.find(utxoKey);
@@ -74,15 +113,19 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
         if (it->second.recipientAddress != KeyPair::deriveAddress(senderPublicKey)) {
             throw std::runtime_error("UTXO de entrada no pertenece al remitente.");
         }
+        // CORRECCIÓN: Suma de uint64_t
         inputSum += it->second.amount;
     }
 
     // Verificar que la suma de outputs no excede la suma de inputs
-    double outputSum = 0;
+    // CAMBIO CRÍTICO: double outputSum -> uint64_t outputSum
+    uint64_t outputSum = 0;
     for (const auto& output : outputs) {
+        // CORRECCIÓN: Suma de uint64_t
         outputSum += output.amount;
     }
 
+    // CORRECCIÓN: Comparación de uint64_t
     if (outputSum > inputSum) {
         throw std::runtime_error("La suma de las salidas excede la suma de las entradas.");
     }
@@ -99,6 +142,7 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
             ss << input.prevTxId << input.outputIndex << toHexString(input.pubKey); // No incluir la firma
         }
         for (const auto& output : outputs) {
+            // CORRECCIÓN: output.amount ahora es uint64_t
             ss << output.amount << output.recipientAddress;
         }
         ss << isCoinbase;
@@ -111,6 +155,7 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
         if (inputs[i].pubKey != senderPublicKey) {
             throw std::runtime_error("La clave publica en el input no coincide con la clave publica del firmante.");
         }
+        // Nota: La asignación de la firma en el input es correcta (copia)
         inputs[i].signature = signer.sign(Radix::SHA256(hashToSign)); // Firmar el hash de la transacción
     }
 
@@ -122,7 +167,8 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
     if (isCoinbase) {
         // Las transacciones coinbase no tienen inputs y crean una nueva moneda.
         // Solo verificamos que tenga al menos una salida y que el monto no sea negativo.
-        return !outputs.empty() && outputs[0].amount >= 0;
+        // CORRECCIÓN: Ahora amount es uint64_t, por lo que amount >= 0 siempre es verdadero.
+        return !outputs.empty(); 
     }
 
     if (inputs.empty()) {
@@ -138,7 +184,8 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
         return false;
     }
 
-    double inputSum = 0;
+    // CAMBIO CRÍTICO: double inputSum -> uint64_t inputSum
+    uint64_t inputSum = 0; 
     for (const auto& input : inputs) {
         std::string utxoKey = input.prevTxId + ":" + std::to_string(input.outputIndex);
         auto it = utxoSet.find(utxoKey);
@@ -165,6 +212,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
                 ss << in.prevTxId << in.outputIndex << toHexString(in.pubKey); // No incluir la firma
             }
             for (const auto& out : outputs) {
+                // CORRECCIÓN: out.amount ahora es uint64_t
                 ss << out.amount << out.recipientAddress;
             }
             ss << isCoinbase;
@@ -176,19 +224,25 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
             std::cerr << "Error de validacion: Firma invalida para el input de transaccion." << std::endl;
             return false;
         }
+        // CORRECCIÓN: Suma de uint64_t
         inputSum += referencedOutput.amount;
     }
 
-    double outputSum = 0;
+    // CAMBIO CRÍTICO: double outputSum -> uint64_t outputSum
+    uint64_t outputSum = 0;
     for (const auto& output : outputs) {
-        if (output.amount < 0) {
+        // CORRECCIÓN: Ahora que es uint64_t, no puede ser negativo, esta verificación ya no es necesaria, 
+        // pero se mantiene para coherencia si se usaran enteros con signo.
+        /* if (output.amount < 0) {
             std::cerr << "Error de validacion: Output de transaccion con monto negativo." << std::endl;
             return false;
-        }
+        }*/
+        // CORRECCIÓN: Suma de uint64_t
         outputSum += output.amount;
     }
 
     // La suma de las salidas no puede exceder la suma de las entradas (incluyendo tarifas de transacción)
+    // CORRECCIÓN: Comparación de uint64_t
     if (outputSum > inputSum) {
         std::cerr << "Error de validacion: La suma de las salidas excede la suma de las entradas." << std::endl;
         return false;
@@ -222,9 +276,11 @@ std::string Transaction::toString(bool indent) const {
 
     ss << prefix << "Outputs (" << outputs.size() << "):\n";
     for (const auto& output : outputs) {
-        ss << prefix << "  Amount: " << std::fixed << std::setprecision(0) << output.amount << "\n"
+        // CORRECCIÓN: Se elimina std::fixed y std::setprecision(0)
+        // Se utiliza la función formatRadsToRDX para mostrar el monto en RDX con decimales.
+        ss << prefix << "  Amount: " << formatRadsToRDX(output.amount) << " RDX\n"
            << prefix << "  Recipient: " << output.recipientAddress << "\n"
-           << prefix << "  UTXO ID: " << "\n"; // UTXO ID se genera dinámicamente, no es parte del output en sí
+           << prefix << "  UTXO ID: " << "\n"; 
     }
     return ss.str();
 }

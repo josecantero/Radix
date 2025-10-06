@@ -27,14 +27,14 @@ struct TransactionInput {
 };
 
 struct TransactionOutput {
-    double amount;          // Cantidad de monedas
+    uint64_t amount;          // Cantidad de monedas
     std::string recipientAddress; // Dirección del destinatario
 
     // Constructor por defecto
-    TransactionOutput() : amount(0.0) {}
+    TransactionOutput() : amount(0) {}
 
     // Constructor con parámetros
-    TransactionOutput(double amount, const std::string& recipientAddress)
+    TransactionOutput(uint64_t amount, const std::string& recipientAddress)
         : amount(amount), recipientAddress(recipientAddress) {}
 };
 
@@ -50,7 +50,7 @@ public:
     Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs);
 
     // Constructor para transacciones coinbase
-    Transaction(const std::string& recipientAddress, double amount, bool isCoinbase = true);
+    Transaction(const std::string& recipientAddress, uint64_t amount, bool isCoinbase = true);
 
     // Calcula el hash de la transacción
     std::string calculateHash() const;
