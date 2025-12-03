@@ -252,7 +252,7 @@ std::string Transaction::toString(bool indent) const {
 // Métodos de Persistencia Binaria (TransactionInput)
 // --------------------------------------------------------------------------------
 
-void TransactionInput::serialize(std::fstream& fs) const {
+void TransactionInput::serialize(std::ostream& fs) const {
     Persistence::writeString(fs, prevTxId);
     Persistence::writePrimitive(fs, outputIndex);
     
@@ -261,7 +261,7 @@ void TransactionInput::serialize(std::fstream& fs) const {
     Persistence::writeVector(fs, signature);
 }
 
-void TransactionInput::deserialize(std::fstream& fs) {
+void TransactionInput::deserialize(std::istream& fs) {
     prevTxId = Persistence::readString(fs);
     outputIndex = Persistence::readPrimitive<uint64_t>(fs);
     
@@ -273,13 +273,13 @@ void TransactionInput::deserialize(std::fstream& fs) {
 // Métodos de Persistencia Binaria (TransactionOutput)
 // --------------------------------------------------------------------------------
 
-void TransactionOutput::serialize(std::fstream& fs) const {
+void TransactionOutput::serialize(std::ostream& fs) const {
     // amount es uint64_t
     Persistence::writePrimitive(fs, amount);
     Persistence::writeString(fs, recipientAddress);
 }
 
-void TransactionOutput::deserialize(std::fstream& fs) {
+void TransactionOutput::deserialize(std::istream& fs) {
     amount = Persistence::readPrimitive<uint64_t>(fs);
     recipientAddress = Persistence::readString(fs);
 }
@@ -288,7 +288,7 @@ void TransactionOutput::deserialize(std::fstream& fs) {
 // Métodos de Persistencia Binaria (Transaction)
 // --------------------------------------------------------------------------------
 
-void Transaction::serialize(std::fstream& fs) const {
+void Transaction::serialize(std::ostream& fs) const {
     Persistence::writeString(fs, id);
     Persistence::writePrimitive(fs, timestamp);
     Persistence::writePrimitive(fs, isCoinbase);
@@ -308,7 +308,7 @@ void Transaction::serialize(std::fstream& fs) const {
     }
 }
 
-void Transaction::deserialize(std::fstream& fs) {
+void Transaction::deserialize(std::istream& fs) {
     id = Persistence::readString(fs);
     timestamp = Persistence::readPrimitive<long long>(fs);
     isCoinbase = Persistence::readPrimitive<bool>(fs);

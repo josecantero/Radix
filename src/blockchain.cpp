@@ -67,7 +67,7 @@ void Blockchain::addTransaction(const Radix::Transaction& transaction) {
 }
 
 // Mina las transacciones pendientes y crea un nuevo bloque
-void Blockchain::minePendingTransactions(const std::string& miningRewardAddress) {
+void Blockchain::minePendingTransactions(const std::string& miningRewardAddress, const std::atomic<bool>& running) {
     // Lógica del Halving:
     if (chain.size() > 0 && chain.size() % HALVING_INTERVAL == 0) {
         currentMiningReward /= 2;
@@ -87,7 +87,10 @@ void Blockchain::minePendingTransactions(const std::string& miningRewardAddress)
 
     // Minar el bloque (encontrar un nonce válido)
     std::cout << "Iniciando mineria del bloque con " << transactionsForBlock.size() << " transacciones..." << std::endl;
-    newBlock.mineBlock(difficulty);
+    newBlock.mineBlock(difficulty, running);
+    
+    if (!running) return; // Si se detuvo la minería, salir sin añadir el bloque
+
     std::cout << "Bloque minado! Hash: " << newBlock.hash << ", Nonce: " << newBlock.nonce << std::endl;
 
     // Añadir el nuevo bloque a la cadena
@@ -181,6 +184,16 @@ const Block& Blockchain::getLatestBlock() const {
 // Obtiene el tamaño actual de la cadena (número de bloques)
 size_t Blockchain::getChainSize() const {
     return chain.size();
+}
+
+// Obtiene la altura de un bloque dado su hash. Retorna -1 si no se encuentra.
+int Blockchain::getBlockHeight(const std::string& hash) const {
+    for (size_t i = 0; i < chain.size(); ++i) {
+        if (chain[i].hash == hash) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
 // Actualiza el UTXOSet con las transacciones de un nuevo bloque
@@ -316,6 +329,58 @@ bool Blockchain::loadChain(const std::string& filename) {
         utxoSet.clear();
         return false;
     }
+}
+
+// Obtiene el hash del bloque en una altura específica
+std::string Blockchain::getBlockHash(uint64_t index) const {
+    if (index < chain.size()) {
+        return chain[index].hash;
+    }
+    return "";
+}
+
+Blockchain::BlockStatus Blockchain::submitBlock(const Block& block) {
+    // 1. Check if we already have this block
+    for (const auto& b : chain) {
+        if (b.hash == block.hash) {
+            return BlockStatus::IGNORED_DUPLICATE;
+        }
+    }
+
+    // 2. Check if it extends the tip
+    if (block.prevHash == getLatestBlock().hash) {
+        // Validate block
+        std::map<std::string, TransactionOutput> tempUtxo = utxoSet;
+        if (block.isValid(rxContext_, tempUtxo)) { 
+             chain.push_back(block);
+             updateUtxoSet(block);
+             return BlockStatus::ACCEPTED;
+        } else {
+             return BlockStatus::REJECTED_INVALID;
+        }
+    }
+
+    // 3. Check for Fork / Reorg (Simplified detection)
+    // Find the ancestor
+    int ancestorIndex = -1;
+    for (int i = chain.size() - 1; i >= 0; --i) {
+        if (chain[i].hash == block.prevHash) {
+            ancestorIndex = i;
+            break;
+        }
+    }
+
+    if (ancestorIndex != -1) {
+        size_t depth = chain.size() - 1 - ancestorIndex;
+        const size_t SAFE_DEPTH = 5; 
+
+        if (depth > SAFE_DEPTH) {
+            return BlockStatus::REQUIRES_WITNESSING;
+        }
+        return BlockStatus::FORK_DETECTED;
+    }
+
+    return BlockStatus::REJECTED_INVALID;
 }
 
 } // namespace Radix

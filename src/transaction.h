@@ -6,7 +6,7 @@
 #include <vector>
 #include <map> // Para std::map en isValid
 #include <cstdint> // Para uint64_t
-#include <fstream> // Para serialización
+#include <iostream> // Para serialización
 
 #include "crypto.h" // Para Radix::PublicKey, Radix::Signature, Radix::RandomXHash
 
@@ -15,12 +15,13 @@ namespace Radix {
 // Declaración anticipada de las clases y utilidades de persistencia
 namespace Persistence {
     // Declaraciones de funciones de serialización necesarias (para evitar incluir persistence_util.h)
-    template <typename T> void writePrimitive(std::fstream& fs, const T& data);
-    template <typename T> T readPrimitive(std::fstream& fs);
-    void writeString(std::fstream& fs, const std::string& str);
-    std::string readString(std::fstream& fs);
-    void writeVector(std::fstream& fs, const std::vector<uint8_t>& vec);
-    std::vector<uint8_t> readVector(std::fstream& fs);
+    // Declaraciones de funciones de serialización necesarias (para evitar incluir persistence_util.h)
+    template <typename T> void writePrimitive(std::ostream& fs, const T& data);
+    template <typename T> T readPrimitive(std::istream& fs);
+    void writeString(std::ostream& fs, const std::string& str);
+    std::string readString(std::istream& fs);
+    void writeVector(std::ostream& fs, const std::vector<uint8_t>& vec);
+    std::vector<uint8_t> readVector(std::istream& fs);
 }
 
 // Estructuras para las entradas y salidas de transacciones
@@ -38,8 +39,8 @@ struct TransactionInput {
         : prevTxId(prevTxId), outputIndex(outputIndex), pubKey(pubKey), signature(signature) {}
     
     // Métodos de Persistencia Binaria
-    void serialize(std::fstream& fs) const;
-    void deserialize(std::fstream& fs);
+    void serialize(std::ostream& fs) const;
+    void deserialize(std::istream& fs);
 };
 
 struct TransactionOutput {
@@ -54,8 +55,8 @@ struct TransactionOutput {
         : amount(amount), recipientAddress(recipientAddress) {}
 
     // Métodos de Persistencia Binaria
-    void serialize(std::fstream& fs) const;
-    void deserialize(std::fstream& fs);
+    void serialize(std::ostream& fs) const;
+    void deserialize(std::istream& fs);
 };
 
 class Transaction {
@@ -87,8 +88,8 @@ public:
     std::string toString(bool indent = false) const;
 
     // Métodos de Persistencia Binaria
-    void serialize(std::fstream& fs) const;
-    void deserialize(std::fstream& fs);
+    void serialize(std::ostream& fs) const;
+    void deserialize(std::istream& fs);
 
 private:
     // Método auxiliar para calcular el hash de la transacción

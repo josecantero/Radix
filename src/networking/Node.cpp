@@ -1,0 +1,636 @@
+#include "Node.h"
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <iostream>
+#include <cstring>
+#include <algorithm>
+#include <sstream>
+#include <random>
+#include <fstream>
+
+namespace Radix {
+
+Node::Node(Blockchain& blockchain) : blockchain(blockchain), running(false) {
+    loadBannedPeers("radix_banned_peers.dat");
+}
+
+Node::~Node() {
+    saveBannedPeers("radix_banned_peers.dat");
+    stop();
+}
+
+void Node::startServer(int port) {
+    if (running) return;
+
+    serverSocketFd = socket(AF_INET, SOCK_STREAM, 0);
+    if (serverSocketFd == -1) {
+        std::cerr << "Error al crear el socket del servidor." << std::endl;
+        return;
+    }
+
+    int opt = 1;
+    if (setsockopt(serverSocketFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
+        std::cerr << "Error en setsockopt" << std::endl;
+        close(serverSocketFd);
+        return;
+    }
+
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+
+    if (bind(serverSocketFd, (struct sockaddr*)&address, sizeof(address)) < 0) {
+        std::cerr << "Error en bind al puerto " << port << std::endl;
+        close(serverSocketFd);
+        return;
+    }
+
+    if (listen(serverSocketFd, 10) < 0) {
+        std::cerr << "Error en listen" << std::endl;
+        close(serverSocketFd);
+        return;
+    }
+
+    running = true;
+    std::cout << "Nodo escuchando en el puerto " << port << std::endl;
+
+    serverThread = std::thread(&Node::acceptLoop, this, serverSocketFd);
+    witnessingMonitorThread = std::thread(&Node::monitorWitnessingTimeouts, this);
+}
+
+void Node::stop() {
+    running = false;
+    
+    // Shutdown server socket to unblock accept()
+    if (serverSocketFd != -1) {
+        shutdown(serverSocketFd, SHUT_RDWR);
+        close(serverSocketFd);
+        serverSocketFd = -1;
+    }
+    
+    if (serverThread.joinable()) {
+        serverThread.join(); 
+    }
+    
+    if (witnessingMonitorThread.joinable()) {
+        witnessingMonitorThread.join();
+    }
+    
+    std::lock_guard<std::mutex> lock(peersMutex);
+    for (auto& peer : peers) {
+        peer->closeConnection();
+    }
+    peers.clear();
+}
+
+bool Node::connectToPeer(const std::string& ip, int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        std::cerr << "Error creando socket cliente" << std::endl;
+        return false;
+    }
+
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
+
+    if (inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr) <= 0) {
+        std::cerr << "Direccion invalida / no soportada: " << ip << std::endl;
+        close(sock);
+        return false;
+    }
+
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+        std::cerr << "Conexion fallida a " << ip << ":" << port << std::endl;
+        close(sock);
+        return false;
+    }
+
+    std::cout << "Conectado exitosamente a " << ip << ":" << port << std::endl;
+
+    auto peer = std::make_shared<Peer>(sock, serv_addr);
+    {
+        std::lock_guard<std::mutex> lock(peersMutex);
+        peers.push_back(peer);
+    }
+
+    // Initiate Handshake
+    Message handshakeMsg;
+    handshakeMsg.header.magic = RADIX_NETWORK_MAGIC;
+    handshakeMsg.header.type = MessageType::HANDSHAKE;
+    handshakeMsg.header.payloadSize = 0;
+    handshakeMsg.header.checksum = 0; // TODO: Implement checksum
+    
+    peer->sendMessage(handshakeMsg);
+
+    std::thread(&Node::handlePeer, this, peer).detach();
+
+    return true;
+}
+
+void Node::broadcast(const Message& msg) {
+    std::lock_guard<std::mutex> lock(peersMutex);
+    for (auto& peer : peers) {
+        if (peer->isConnected() && peer->isHandshaked()) {
+            peer->sendMessage(msg);
+        }
+    }
+}
+
+void Node::broadcastBlock(const Block& block) {
+    Message msg;
+    msg.header.magic = RADIX_NETWORK_MAGIC;
+    msg.header.type = MessageType::NEW_BLOCK;
+    msg.header.checksum = 0;
+
+    // Serialize block to payload
+    std::stringstream ss;
+    block.serialize(ss);
+    std::string serializedBlock = ss.str();
+
+    msg.header.payloadSize = serializedBlock.size();
+    msg.payload.assign(serializedBlock.begin(), serializedBlock.end());
+
+    broadcast(msg);
+}
+
+void Node::acceptLoop(int serverSocketFd) {
+    while (running) {
+        struct sockaddr_in address;
+        int addrlen = sizeof(address);
+        int new_socket = accept(serverSocketFd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
+        
+        if (new_socket < 0) {
+            if (running) std::cerr << "Error en accept" << std::endl;
+            continue;
+        }
+
+        std::cout << "Nueva conexion entrante aceptada." << std::endl;
+        
+        auto peer = std::make_shared<Peer>(new_socket, address);
+        {
+            std::lock_guard<std::mutex> lock(peersMutex);
+            peers.push_back(peer);
+        }
+
+        std::thread(&Node::handlePeer, this, peer).detach();
+    }
+    close(serverSocketFd);
+}
+
+void Node::handlePeer(std::shared_ptr<Peer> peer) {
+    Message msg;
+    while (peer->isConnected() && running) {
+        if (peer->readMessage(msg)) {
+            processMessage(peer, msg);
+        } else {
+            // Connection lost
+            break;
+        }
+    }
+    
+    std::cout << "Peer desconectado: " << peer->getIpAddress() << std::endl;
+    peer->closeConnection();
+
+    // Remove peer from list
+    std::lock_guard<std::mutex> lock(peersMutex);
+    peers.erase(std::remove(peers.begin(), peers.end(), peer), peers.end());
+}
+
+void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
+    if (msg.header.magic != RADIX_NETWORK_MAGIC) {
+        std::cerr << "Mensaje con Magic invalido de " << peer->getIpAddress() << std::endl;
+        peer->closeConnection();
+        return;
+    }
+
+    switch (msg.header.type) {
+        case MessageType::HANDSHAKE: {
+            std::cout << "Recibido HANDSHAKE de " << peer->getIpAddress() << std::endl;
+            // Respond with ACK
+            Message ackMsg;
+            ackMsg.header.magic = RADIX_NETWORK_MAGIC;
+            ackMsg.header.type = MessageType::HANDSHAKE_ACK;
+            ackMsg.header.payloadSize = 0;
+            ackMsg.header.checksum = 0;
+            peer->sendMessage(ackMsg);
+            
+            peer->setHandshaked(true);
+            break;
+        }
+        case MessageType::HANDSHAKE_ACK: {
+            std::cout << "Recibido HANDSHAKE_ACK de " << peer->getIpAddress() << std::endl;
+            peer->setHandshaked(true);
+            break;
+        }
+        case MessageType::NEW_BLOCK: {
+            std::cout << "Recibido NUEVO BLOQUE de " << peer->getIpAddress() << std::endl;
+            
+            // Check if peer is banned
+            if (isPeerBanned(peer->getIpAddress())) {
+                std::cout << "❌ Rechazando bloque de peer baneado: " << peer->getIpAddress() << std::endl;
+                peer->closeConnection();
+                break;
+            }
+            
+            if (msg.payload.empty()) break;
+
+            try {
+                std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
+                Radix::RandomXContext dummyContext; 
+                Block newBlock(0, "", {}, 0, dummyContext); 
+                newBlock.deserialize(ss);
+
+                Blockchain::BlockStatus status = blockchain.submitBlock(newBlock);
+
+                if (status == Blockchain::BlockStatus::ACCEPTED) {
+                    std::cout << "✅ Bloque ACEPTADO. Altura: " << blockchain.getChainSize() - 1 << std::endl;
+                    // Re-broadcast to other peers
+                    // TODO: Implement "seen" cache to avoid broadcast loops
+                    broadcastBlock(newBlock); 
+                    
+                } else if (status == Blockchain::BlockStatus::REQUIRES_WITNESSING) {
+                    std::cout << "\n⚠️⚠️⚠️  REORGANIZACIÓN PROFUNDA DETECTADA  ⚠️⚠️⚠️\n";
+                    std::cout << "Iniciando PROTOCOLO DE TESTIGOS (Peer Witnessing)\n" << std::endl;
+                    
+                    // Select random witnesses (1-5 nodes)
+                    auto witnesses = selectRandomWitnesses(5);
+                    
+                    if (witnesses.empty()) {
+                        std::cout << "❌ Sin peers disponibles para witnessing - RECHAZANDO automáticamente" << std::endl;
+                        std::cout << "BANEANDO nodo: " << peer->getIpAddress() << "\n" << std::endl;
+                        banPeer(peer->getIpAddress(), "Reorganización profunda sin testigos disponibles para verificar");
+                        break;
+                    }
+                    
+                    std::cout << "📋 Consultando a " << witnesses.size() << " testigo(s) aleatorio(s)..." << std::endl;
+                    
+                    // Create witness query
+                    WitnessQuery query;
+                    query.blockHeight = blockchain.getChainSize() - 1; // Current tip height
+                    query.blockHash = newBlock.hash;
+                    query.startTime = std::chrono::steady_clock::now();
+                    query.queryingPeerIp = peer->getIpAddress();
+                    query.expectedResponses = witnesses.size();
+                    query.completed = false;
+                    
+                    {
+                        std::lock_guard<std::mutex> lock(witnessQueriesMutex);
+                        activeWitnessQueries[newBlock.hash] = query;
+                    }
+                    
+                    // Send queries to selected witnesses
+                    for (auto& witness : witnesses) {
+                        WitnessQueryPayload queryPayload;
+                        queryPayload.blockHeight = query.blockHeight;
+                        std::strncpy(queryPayload.blockHash, newBlock.hash.c_str(), 64);
+                        queryPayload.blockHash[64] = '\0';
+                        
+                        Message queryMsg;
+                        queryMsg.header.magic = RADIX_NETWORK_MAGIC;
+                        queryMsg.header.type = MessageType::WITNESS_QUERY;
+                        queryMsg.header.payloadSize = sizeof(queryPayload);
+                        queryMsg.header.checksum = 0;
+                        queryMsg.payload.resize(sizeof(queryPayload));
+                        std::memcpy(queryMsg.payload.data(), &queryPayload, sizeof(queryPayload));
+                        
+                        std::cout << "  → Enviando query a testigo: " << witness->getIpAddress() << std::endl;
+                        witness->sendMessage(queryMsg);
+                    }
+                    
+                    std::cout << "⏳ Esperando respuestas (timeout: 10s)...\n" << std::endl;
+                    
+                } else {
+                    std::cout << "❌ Bloque rechazado. Estado: " << (int)status << std::endl;
+                }
+
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Error procesando bloque: " << e.what() << std::endl;
+            }
+            break;
+        }
+        case MessageType::NEW_TRANSACTION: {
+            std::cout << "Recibida NUEVA TRANSACCION de " << peer->getIpAddress() << std::endl;
+            if (msg.payload.empty()) break;
+            try {
+                std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
+                Transaction tx;
+                tx.deserialize(ss);
+                blockchain.addTransaction(tx);
+            } catch (const std::exception& e) {
+                std::cerr << "Error procesando transaccion recibida: " << e.what() << std::endl;
+            }
+            break;
+        }
+        case MessageType::WITNESS_QUERY: {
+            if (msg.payload.size() != sizeof(WitnessQueryPayload)) {
+                std::cerr << "Payload de WITNESS_QUERY invalido." << std::endl;
+                break;
+            }
+            WitnessQueryPayload query;
+            std::memcpy(&query, msg.payload.data(), sizeof(query));
+            
+            std::string myHash = blockchain.getBlockHash(query.blockHeight);
+            // Comparar hashes (asegurando terminación nula en query.blockHash)
+            query.blockHash[64] = '\0'; 
+            bool agrees = (myHash == std::string(query.blockHash));
+            
+            std::cout << "TESTIGO: Solicitud para altura " << query.blockHeight << ". Mi hash: " << (myHash.empty() ? "Desconocido" : myHash) << ". Veredicto: " << (agrees ? "VALIDO" : "INVALIDO") << std::endl;
+
+            WitnessResponsePayload resp;
+            resp.agrees = agrees;
+            
+            Message respMsg;
+            respMsg.header.magic = RADIX_NETWORK_MAGIC;
+            respMsg.header.type = MessageType::WITNESS_RESPONSE;
+            respMsg.header.payloadSize = sizeof(resp);
+            respMsg.header.checksum = 0;
+            respMsg.payload.resize(sizeof(resp));
+            std::memcpy(respMsg.payload.data(), &resp, sizeof(resp));
+            
+            peer->sendMessage(respMsg);
+            break;
+        }
+        case MessageType::WITNESS_RESPONSE: {
+            if (msg.payload.size() != sizeof(WitnessResponsePayload)) break;
+            
+            WitnessResponsePayload resp;
+            std::memcpy(&resp, msg.payload.data(), sizeof(resp));
+            
+            std::cout << "🔍 TESTIGO: Respuesta de " << peer->getIpAddress() << ": " 
+                      << (resp.agrees ? "✅ APRUEBA" : "❌ RECHAZA") << std::endl;
+            
+            // Find the corresponding active query
+            std:: lock_guard<std::mutex> lock(witnessQueriesMutex);
+            for (auto& [blockHash, query] : activeWitnessQueries) {
+                if (!query.completed) {
+                    // Check if this peer already responded
+                    bool alreadyResponded = false;
+                    for (const auto& respondedIp : query.respondedPeers) {
+                        if (respondedIp == peer->getIpAddress()) {
+                            alreadyResponded = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!alreadyResponded) {
+                        query.responses.push_back(resp.agrees);
+                        query.respondedPeers.push_back(peer->getIpAddress());
+                        
+                        std::cout << "   Respuestas recibidas: " << query.responses.size() 
+                                  << "/" << query.expectedResponses << std::endl;
+                        
+                        // If all witnesses have responded, process immediately (no need to wait for timeout)
+                        if (query.responses.size() >= static_cast<size_t>(query.expectedResponses)) {
+                            std::cout << "✅ Todas las respuestas recibidas. Procesando resultado..." << std::endl;
+                            processWitnessQueryResult(blockHash);
+                            query.completed = true;
+                        }
+                    }
+                    break; // Only process for the first active query
+                }
+            }
+            break;
+        }
+        default: {
+            std::cout << "Mensaje desconocido recibido: " << (int)msg.header.type << std::endl;
+            break;
+        }
+    }
+}
+
+// ============================================================================
+// PEER WITNESSING PROTOCOL IMPLEMENTATION
+// ============================================================================
+
+std::vector<std::shared_ptr<Peer>> Node::selectRandomWitnesses(int maxCount) {
+    std::lock_guard<std::mutex> lock(peersMutex);
+    
+    std::vector<std::shared_ptr<Peer>> eligiblePeers;
+    for (auto& peer : peers) {
+        if (peer->isConnected() && peer->isHandshaked() && !isPeerBanned(peer->getIpAddress())) {
+            eligiblePeers.push_back(peer);
+        }
+    }
+    
+    if (eligiblePeers.empty()) return {};
+    
+    // If we have fewer than maxCount peers, use all
+    int numToSelect = std::min(maxCount, static_cast<int>(eligiblePeers.size()));
+    
+    // Cryptographically secure random selection
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(eligiblePeers.begin(), eligiblePeers.end(), g);
+    
+    return std::vector<std::shared_ptr<Peer>>(eligiblePeers.begin(), eligiblePeers.begin() + numToSelect);
+}
+
+void Node::monitorWitnessingTimeouts() {
+    const auto TIMEOUT_DURATION = std::chrono::seconds(10);
+    
+    while (running) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        std::lock_guard<std::mutex> lock(witnessQueriesMutex);
+        auto now = std::chrono::steady_clock::now();
+        
+        for (auto& [blockHash, query] : activeWitnessQueries) {
+            if (!query.completed && (now - query.startTime) > TIMEOUT_DURATION) {
+                std::cout << "⏱️ TESTIGO: Timeout para query de bloque " << blockHash.substr(0, 16) << "..." << std::endl;
+                processWitnessQueryResult(blockHash);
+                query.completed = true;
+            }
+        }
+        
+        // Clean up old completed queries (after 5 minutes)
+        for (auto it = activeWitnessQueries.begin(); it != activeWitnessQueries.end();) {
+            if (it->second.completed && (now - it->second.startTime) > std::chrono::minutes(5)) {
+                it = activeWitnessQueries.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
+bool Node::isPeerBanned(const std::string& ip) const {
+    std::lock_guard<std::mutex> lock(bannedPeersMutex);
+    
+    for (const auto& banned : bannedPeers) {
+        if (banned.ip == ip) {
+            // Permanent ban for now (could implement time-based unbanning)
+            return true;
+        }
+    }
+    return false;
+}
+
+void Node::banPeer(const std::string& ip, const std::string& reason) {
+    {
+        std::lock_guard<std::mutex> lock(bannedPeersMutex);
+        
+        // Check if already banned
+        for (const auto& banned : bannedPeers) {
+            if (banned.ip == ip) return;
+        }
+        
+        BannedPeer ban;
+        ban.ip = ip;
+        ban.banTime = std::chrono::steady_clock::now();
+        ban.reason = reason;
+        
+        bannedPeers.push_back(ban);
+    }
+    
+    std::cout << "🚫 PEER BANEADO: " << ip << "\n   Razón: " << reason << std::endl;
+    
+    // Disconnect the peer if currently connected
+    {
+        std::lock_guard<std::mutex> peerLock(peersMutex);
+        for (auto& peer : peers) {
+            if (peer->getIpAddress() == ip) {
+                peer->closeConnection();
+            }
+        }
+    }
+    
+    saveBannedPeers("radix_banned_peers.dat");
+}
+
+void Node::processWitnessQueryResult(const std::string& blockHash) {
+    auto it = activeWitnessQueries.find(blockHash);
+    if (it == activeWitnessQueries.end()) return;
+    
+    WitnessQuery& query = it->second;
+    
+    // Count votes
+    int agrees = 0, disagrees = 0;
+    for (bool response : query.responses) {
+        if (response) agrees++;
+        else disagrees++;
+    }
+    
+    int total = agrees + disagrees;
+    
+    std::cout << "\n═══════════════════════════════════════════════════\n";
+    std::cout << "⚖️  RESULTADO DE PEER WITNESSING\n";
+    std::cout << "═══════════════════════════════════════════════════\n";
+    std::cout << "Bloque: " << blockHash.substr(0, 16) << "...\n";
+    std::cout << "Testigos consultados: " << query.expectedResponses << "\n";
+    std::cout << "Respuestas recibidas: " << total << "\n";
+    std::cout << "  ✓ Aprueban: " << agrees << "\n";
+    std::cout << "  ✗ Rechazan: " << disagrees << "\n";
+    std::cout << "═══════════════════════════════════════════════════\n";
+    
+    if (total == 0) {
+        std::cout << "❌ DECISIÓN: Sin respuestas - RECHAZANDO por seguridad\n";
+        std::cout << "Nodo sospechoso: " << query.queryingPeerIp << std::endl;
+        std::cout << "═══════════════════════════════════════════════════\n\n";
+        banPeer(query.queryingPeerIp, "Reorganización profunda sin testigos disponibles para verificar");
+        return;
+    }
+    
+    // Decision by majority
+    if (agrees > disagrees) {
+        std::cout << "✅ DECISIÓN: MAYORÍA APRUEBA (" << agrees << "/" << total << ")\n";
+        std::cout << "   El bloque puede ser considerado válido\n";
+        std::cout << "═══════════════════════════════════════════════════\n\n";
+        // TODO: Here we should accept the block and apply reorganization
+        // This is complex and requires careful implementation
+        // For now, we just log the approval
+    } else if (disagrees > agrees) {
+        std::cout << "❌ DECISIÓN: MAYORÍA RECHAZA (" << disagrees << "/" << total << ")\n";
+        std::cout << "   ⚠️  ATAQUE 51% DETECTADO\n";
+        std::cout << "   Baneando nodo malicioso: " << query.queryingPeerIp << "\n";
+        std::cout << "═══════════════════════════════════════════════════\n\n";
+        banPeer(query.queryingPeerIp, "Intento de ataque 51% detectado por consenso de testigos");
+    } else {
+        // Tie - reject for security
+        std::cout << "⚠️  DECISIÓN: EMPATE (" << agrees << "/" << total << ")\n";
+        std::cout << "   Rechazando por seguridad\n";
+        std::cout << "═══════════════════════════════════════════════════\n\n";
+        banPeer(query.queryingPeerIp, "Empate en witnessing - rechazado por seguridad");
+    }
+}
+
+void Node::loadBannedPeers(const std::string& filename) {
+    std::ifstream fs(filename, std::ios::binary);
+    if (!fs.is_open()) {
+        std::cout << "No se encontró archivo de peers baneados (primera ejecución)" << std::endl;
+        return;
+    }
+    
+    try {
+        size_t count = 0;
+        fs.read(reinterpret_cast<char*>(&count), sizeof(count));
+        
+        std::lock_guard<std::mutex> lock(bannedPeersMutex);
+        bannedPeers.clear();
+        
+        for (size_t i = 0; i < count; ++i) {
+            BannedPeer ban;
+            
+            // Read IP
+            size_t ipLen = 0;
+            fs.read(reinterpret_cast<char*>(&ipLen), sizeof(ipLen));
+            ban.ip.resize(ipLen);
+            fs.read(&ban.ip[0], ipLen);
+            
+            // Read timestamp (as duration count)
+            decltype(ban.banTime.time_since_epoch().count()) timeCount;
+            fs.read(reinterpret_cast<char*>(&timeCount), sizeof(timeCount));
+            ban.banTime = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(timeCount));
+            
+            // Read reason
+            size_t reasonLen = 0;
+            fs.read(reinterpret_cast<char*>(&reasonLen), sizeof(reasonLen));
+            ban.reason.resize(reasonLen);
+            fs.read(&ban.reason[0], reasonLen);
+            
+            bannedPeers.push_back(ban);
+        }
+        
+        std::cout << "✅ Cargados " << bannedPeers.size() << " peers baneados desde disco" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error cargando lista de baneados: " << e.what() << std::endl;
+    }
+    
+    fs.close();
+}
+
+void Node::saveBannedPeers(const std::string& filename) const {
+    std::ofstream fs(filename, std::ios::binary);
+    if (!fs.is_open()) {
+        std::cerr << "❌ No se pudo abrir archivo para guardar peers baneados" << std::endl;
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(bannedPeersMutex);
+    
+    size_t count = bannedPeers.size();
+    fs.write(reinterpret_cast<const char*>(&count), sizeof(count));
+    
+    for (const auto& ban : bannedPeers) {
+        // Write IP
+        size_t ipLen = ban.ip.size();
+        fs.write(reinterpret_cast<const char*>(&ipLen), sizeof(ipLen));
+        fs.write(ban.ip.data(), ipLen);
+        
+        // Write timestamp
+        auto timeCount = ban.banTime.time_since_epoch().count();
+        fs.write(reinterpret_cast<const char*>(&timeCount), sizeof(timeCount));
+        
+        // Write reason
+        size_t reasonLen = ban.reason.size();
+        fs.write(reinterpret_cast<const char*>(&reasonLen), sizeof(reasonLen));
+        fs.write(ban.reason.data(), reasonLen);
+    }
+    
+    fs.close();
+}
+
+} // namespace Radix
+

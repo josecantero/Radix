@@ -6,6 +6,7 @@
 #include <string>
 #include <map>    // Para el UTXOSet
 #include <fstream>  // Para la gestión de archivos (persistenca)
+#include <atomic>
 
 #include "block.h"        // Incluir la definición de Block
 #include "transaction.h"  // Incluir la definición de Transaction
@@ -27,9 +28,21 @@ public:
     // Ahora valida la transacción contra el UTXOSet actual
     void addTransaction(const Radix::Transaction& transaction);
 
+    // Enum for block submission result
+    enum class BlockStatus {
+        ACCEPTED,
+        REJECTED_INVALID,
+        IGNORED_DUPLICATE,
+        FORK_DETECTED,
+        REQUIRES_WITNESSING // Deep reorg detected
+    };
+
+    // Submit a block received from the network
+    BlockStatus submitBlock(const Block& block);
+
     // Mina las transacciones pendientes y crea un nuevo bloque
-    // Ahora recibe el RandomXContext
-    void minePendingTransactions(const std::string& miningRewardAddress);
+    // Ahora recibe el RandomXContext y el flag de ejecución
+    void minePendingTransactions(const std::string& miningRewardAddress, const std::atomic<bool>& running);
 
     // Obtiene el balance de una dirección específica utilizando el UTXOSet
     uint64_t getBalanceOfAddress(const std::string& address) const;
@@ -44,8 +57,14 @@ public:
     // Obtiene el último bloque de la cadena
     const Block& getLatestBlock() const;
 
+    // Obtiene el hash del bloque en una altura específica
+    std::string getBlockHash(uint64_t index) const;
+
     // Nuevo método: Obtiene el tamaño actual de la cadena (número de bloques)
     size_t getChainSize() const;
+
+    // Obtiene la altura de un bloque dado su hash. Retorna -1 si no se encuentra.
+    int getBlockHeight(const std::string& hash) const;
 
     // Getter público para el UTXO Set
     const std::map<std::string, TransactionOutput>& getUtxoSet() const { return utxoSet; }

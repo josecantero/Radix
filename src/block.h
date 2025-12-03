@@ -8,6 +8,7 @@
 #include <chrono>  // Para std::chrono::system_clock
 #include <map>     // Para std::map en isValid
 #include <fstream> // Para serialización binaria
+#include <atomic>
 
 #include "transaction.h"
 #include "randomx_util.h" // Para la declaración de RandomXContext
@@ -17,10 +18,10 @@ namespace Radix {
 // Declaración anticipada de las clases y utilidades de persistencia
 namespace Persistence {
     // Declaraciones de funciones de serialización necesarias (para evitar incluir persistence_util.h)
-    template <typename T> void writePrimitive(std::fstream& fs, const T& data);
-    template <typename T> T readPrimitive(std::fstream& fs);
-    void writeString(std::fstream& fs, const std::string& str);
-    std::string readString(std::fstream& fs);
+    template <typename T> void writePrimitive(std::ostream& fs, const T& data);
+    template <typename T> T readPrimitive(std::istream& fs);
+    void writeString(std::ostream& fs, const std::string& str);
+    std::string readString(std::istream& fs);
 }
 
 class Block {
@@ -50,7 +51,7 @@ public:
     std::string calculateHash() const;
 
     // Realiza la Prueba de Trabajo (Proof of Work)
-    void mineBlock(unsigned int difficulty);
+    void mineBlock(unsigned int difficulty, const std::atomic<bool>& running);
 
     // Convierte el bloque a una representación de cadena para impresión/depuración
     std::string toString() const;
@@ -59,8 +60,8 @@ public:
     bool isValid(RandomXContext& rxContext_ref, const std::map<std::string, TransactionOutput>& utxoSet) const;
 
     // Métodos de Persistencia Binaria ¡NUEVO!
-    void serialize(std::fstream& fs) const;
-    void deserialize(std::fstream& fs);
+    void serialize(std::ostream& fs) const;
+    void deserialize(std::istream& fs);
 
 
 private:

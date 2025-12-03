@@ -62,14 +62,14 @@ std::string Block::calculateHash() const {
 }
 
 // Realiza la Prueba de Trabajo (Proof of Work)
-void Block::mineBlock(unsigned int difficulty) {
+void Block::mineBlock(unsigned int difficulty, const std::atomic<bool>& running) {
     std::string target(difficulty, '0'); // Crea una cadena de '0's de la longitud de la dificultad
     std::string currentHash;
 
     std::cout << "Minando bloque..." << std::endl;
 
     // Iterar hasta que el hash comience con el número requerido de ceros
-    while (true) {
+    while (running) {
         currentHash = calculateHash();
         if (currentHash.substr(0, difficulty) == target) {
             break; // Se encontró un hash válido
@@ -80,6 +80,11 @@ void Block::mineBlock(unsigned int difficulty) {
             std::cerr << "Advertencia: Nonce ha alcanzado el maximo. Reiniciando para evitar bucle infinito." << std::endl;
             nonce = 0; 
         }
+    }
+
+    if (!running) {
+        std::cout << "Mineria detenida." << std::endl;
+        return;
     }
 
     hash = currentHash; // Almacena el hash encontrado
@@ -200,7 +205,7 @@ std::string Block::buildMerkleTree(const std::vector<std::string>& hashes) const
 // Métodos de Persistencia Binaria (Block) - ¡NUEVO!
 // --------------------------------------------------------------------------------
 
-void Block::serialize(std::fstream& fs) const {
+void Block::serialize(std::ostream& fs) const {
     Persistence::writePrimitive(fs, version);
     Persistence::writePrimitive(fs, timestamp);
     Persistence::writeString(fs, prevHash);
@@ -217,7 +222,7 @@ void Block::serialize(std::fstream& fs) const {
     }
 }
 
-void Block::deserialize(std::fstream& fs) {
+void Block::deserialize(std::istream& fs) {
     version = Persistence::readPrimitive<uint64_t>(fs);
     timestamp = Persistence::readPrimitive<long long>(fs);
     prevHash = Persistence::readString(fs);
