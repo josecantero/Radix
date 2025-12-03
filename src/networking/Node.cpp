@@ -11,7 +11,7 @@
 
 namespace Radix {
 
-Node::Node(Blockchain& blockchain) : blockchain(blockchain), running(false) {
+Node::Node(Blockchain& blockchain) : blockchain(blockchain), running(false), syncState(SyncState::NEEDS_SYNC) {
     loadBannedPeers("radix_banned_peers.dat");
 }
 
@@ -302,12 +302,103 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                     
                     std::cout << "⏳ Esperando respuestas (timeout: 10s)...\n" << std::endl;
                     
+                } else if (status == Blockchain::BlockStatus::REJECTED_INVALID) {
+                     // Check if we're missing the parent block
+                    int parentHeight = blockchain.getBlockHeight(newBlock.prevHash);
+                    if (parentHeight == -1 && blockchain.getChainSize() > 0) {
+                        // We don't have the parent - need to sync
+                        std::cout << "⚠️  Nos falta el bloque padre. Iniciando sincronización..." << std::endl;
+                        
+                        uint64_t ourHeight = blockchain.getChainSize() - 1;
+                        targetChainHeight = ourHeight + 10; // Estimate
+                        
+                        requestBlockchain(peer, ourHeight + 1);
+                    } else {
+                        std::cout << "❌ Bloque rechazado. Estado: " << (int)status << std::endl;
+                    }
                 } else {
                     std::cout << "❌ Bloque rechazado. Estado: " << (int)status << std::endl;
                 }
 
             } catch (const std::exception& e) {
                 std::cerr << "❌ Error procesando bloque: " << e.what() << std::endl;
+            }
+            break;
+        }
+        case MessageType::REQUEST_CHAIN: {
+            if (msg.payload.size() != sizeof(RequestChainPayload)) break;
+            
+            RequestChainPayload request;
+            std::memcpy(&request, msg.payload.data(), sizeof(request));
+            
+            std::cout << "📤 Peer " << peer->getIpAddress() << " solicita cadena desde altura " 
+                      << request.startHeight << std::endl;
+            
+            // Get blocks from blockchain
+            auto blocks = blockchain.getBlocksFromHeight(request.startHeight, request.maxBlocks);
+            
+            if (blocks.empty()) {
+                std::cout << "   No hay bloques para enviar" << std::endl;
+                break;
+            }
+            
+            // Serialize blocks
+            std::stringstream ss;
+            
+            // Write block count
+            uint64_t blockCount = blocks.size();
+            ss.write(reinterpret_cast<const char*>(&blockCount), sizeof(blockCount));
+            
+            // Write each block
+            for (const auto& block : blocks) {
+                block.serialize(ss);
+            }
+            
+            std::string serialized = ss.str();
+            
+            // Create response message
+            Message response;
+            response.header.magic = RADIX_NETWORK_MAGIC;
+            response.header.type = MessageType::SEND_CHAIN;
+            response.header.payloadSize = serialized.size();
+            response.header.checksum = 0;
+            response.payload.assign(serialized.begin(), serialized.end());
+            
+            std::cout << "   Enviando " << blockCount << " bloque(s)" << std::endl;
+            peer->sendMessage(response);
+            break;
+        }
+        case MessageType::SEND_CHAIN: {
+            if (msg.payload.empty()) break;
+            
+            std::cout << "📥 Recibiendo cadena de " << peer->getIpAddress() << std::endl;
+            
+            try {
+                std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
+                
+                // Read block count
+                uint64_t blockCount = 0;
+                ss.read(reinterpret_cast<char*>(&blockCount), sizeof(blockCount));
+                
+                std::cout << "   Recibidos " << blockCount << " bloque(s)" << std::endl;
+                
+                // Read blocks
+                std::vector<Block> receivedBlocks;
+                Radix::RandomXContext dummyContext;
+                
+                for (uint64_t i = 0; i < blockCount; ++i) {
+                    Block block(0, "", {}, 0, dummyContext);
+                    block.deserialize(ss);
+                    receivedBlocks.push_back(block);
+                }
+                
+                // Process received chain
+                processReceivedChain(receivedBlocks, 0);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Error procesando cadena recibida: " << e.what() << std::endl;
+                std::lock_guard<std::mutex> lock(syncStateMutex);
+                syncState = SyncState::NEEDS_SYNC;
             }
             break;
         }
@@ -632,5 +723,128 @@ void Node::saveBannedPeers(const std::string& filename) const {
     fs.close();
 }
 
-} // namespace Radix
 
+
+// ============================================================================
+// BLOCKCHAIN SYNCHRONIZATION IMPLEMENTATION
+// ============================================================================
+
+void Node::checkSyncStatus() {
+    std::lock_guard<std::mutex> lock(syncStateMutex);
+    
+    if (syncState == SyncState::SYNCING) {
+        // Already syncing
+        return;
+    }
+    
+    // Check if we need to sync
+    // uint64_t ourHeight = blockchain.getChainSize() - 1;
+    
+    // Ask a random peer for their chain height
+    auto witnesses = selectRandomWitnesses(1);
+    if (witnesses.empty()) {
+        // std::cout << "ℹ️  Sin peers para verificar sincronización" << std::endl;
+        return;
+    }
+    
+    // For now, we'll detect desync when we receive a block we don't have
+    // Full implementation would query peer heights
+}
+
+void Node::requestBlockchain(std::shared_ptr<Peer> peer, uint64_t fromHeight) {
+    std::lock_guard<std::mutex> lock(syncStateMutex);
+    
+    if (syncState == SyncState::SYNCING) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastSyncRequest < std::chrono::seconds(30)) {
+            // Still waiting for previous request
+            return;
+        }
+    }
+    
+    syncState = SyncState::SYNCING;
+    lastSyncRequest = std::chrono::steady_clock::now();
+    
+    RequestChainPayload payload;
+    payload.startHeight = fromHeight;
+    payload.maxBlocks = BLOCKS_PER_REQUEST;
+    
+    Message msg;
+    msg.header.magic = RADIX_NETWORK_MAGIC;
+    msg.header.type = MessageType::REQUEST_CHAIN;
+    msg.header.payloadSize = sizeof(payload);
+    msg.header.checksum = 0;
+    msg.payload.resize(sizeof(payload));
+    std::memcpy(msg.payload.data(), &payload, sizeof(payload));
+    
+    std::cout << "📥 Solicitando blockchain desde altura " << fromHeight 
+              << " (hasta " << (fromHeight + BLOCKS_PER_REQUEST) << ")" << std::endl;
+    
+    peer->sendMessage(msg);
+}
+
+void Node::processReceivedChain(const std::vector<Block>& blocks, uint64_t startHeight) {
+    if (blocks.empty()) {
+        std::cout << "⚠️  Cadena recibida está vacía" << std::endl;
+        return;
+    }
+    
+    uint64_t ourHeight = blockchain.getChainSize() - 1;
+    uint64_t receivedEndHeight = startHeight + blocks.size() - 1;
+    
+    std::cout << "🔍 Validando cadena recibida..." << std::endl;
+    std::cout << "   Nuestra altura: " << ourHeight << std::endl;
+    // std::cout << "   Cadena recibida: " << startHeight << " - " << receivedEndHeight << std::endl;
+    
+    // Add blocks one by one
+    for (const auto& block : blocks) {
+        Blockchain::BlockStatus status = blockchain.submitBlock(block);
+        
+        if (status == Blockchain::BlockStatus::ACCEPTED) {
+            std::cout << "   ✅ Bloque " << blockchain.getChainSize() - 1 << " aceptado" << std::endl;
+        } else if (status == Blockchain::BlockStatus::IGNORED_DUPLICATE) {
+            // Skip duplicates
+            continue;
+        } else if (status == Blockchain::BlockStatus::REQUIRES_WITNESSING) {
+            std::cout << "   ⚠️  Bloque requiere witnessing - pausando sync" << std::endl;
+            // Let the witnessing protocol handle it
+            std::lock_guard<std::mutex> lock(syncStateMutex);
+            syncState = SyncState::NEEDS_SYNC;
+            return;
+        } else {
+            std::cout << "   ❌ Bloque rechazado. Estado: " << (int)status << std::endl;
+            std::lock_guard<std::mutex> lock(syncStateMutex);
+            syncState = SyncState::NEEDS_SYNC;
+            return;
+        }
+    }
+    
+    // Check if we need more blocks
+    ourHeight = blockchain.getChainSize() - 1;
+    
+    if (receivedEndHeight >= targetChainHeight || blocks.size() < BLOCKS_PER_REQUEST) {
+        // We're synced!
+        std::cout << "✅ Sincronización completada. Altura: " << ourHeight << std::endl;
+        std::lock_guard<std::mutex> lock(syncStateMutex);
+        syncState = SyncState::SYNCED;
+    } else {
+        // Request next batch
+        std::cout << "📥 Solicitando más bloques..." << std::endl;
+        // Find the peer and request more
+        // For simplicity, we'll set state to NEEDS_SYNC and let it be triggered again
+        std::lock_guard<std::mutex> lock(syncStateMutex);
+        syncState = SyncState::NEEDS_SYNC;
+        
+        // Trigger next request immediately if possible (requires peer reference, which we don't have here easily)
+        // In a better implementation, we'd pass the peer or store active sync peer
+    }
+}
+
+bool Node::needsSync() const {
+    // std::lock_guard<std::mutex> lock(syncStateMutex); // Can't lock if called from locked context?
+    // Be careful with recursive locking. 
+    // This is a simple getter, maybe not needed to lock if atomic or just reading
+    return syncState == SyncState::NEEDS_SYNC;
+}
+
+} // namespace Radix

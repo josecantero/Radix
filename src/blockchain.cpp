@@ -383,4 +383,31 @@ Blockchain::BlockStatus Blockchain::submitBlock(const Block& block) {
     return BlockStatus::REJECTED_INVALID;
 }
 
+// ============================================================================
+// BLOCKCHAIN SYNCHRONIZATION METHODS
+// ============================================================================
+
+std::vector<Block> Blockchain::getBlocksFromHeight(uint64_t startHeight, uint64_t maxCount) const {
+    std::vector<Block> result;
+    
+    if (startHeight >= chain.size()) {
+        return result; // Empty - requested height doesn't exist
+    }
+    
+    uint64_t endHeight = std::min(startHeight + maxCount, static_cast<uint64_t>(chain.size()));
+    
+    for (uint64_t i = startHeight; i < endHeight; ++i) {
+        result.push_back(chain[i]);
+    }
+    
+    return result;
+}
+
+const Block* Blockchain::getBlockAtHeight(uint64_t height) const {
+    if (height >= chain.size()) {
+        return nullptr;
+    }
+    return &chain[height];
+}
+
 } // namespace Radix

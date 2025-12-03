@@ -82,6 +82,29 @@ private:
     std::thread serverThread;
     std::thread witnessingMonitorThread;
     int serverSocketFd = -1; // Initialize to -1
+
+    // ------------------------------------------------------------------------
+    // BLOCKCHAIN SYNCHRONIZATION
+    // ------------------------------------------------------------------------
+    enum class SyncState {
+        SYNCED,           // Blockchain is up to date
+        SYNCING,          // Currently downloading blockchain
+        NEEDS_SYNC        // Detected need to sync but not started yet
+    };
+
+    SyncState syncState = SyncState::NEEDS_SYNC;
+    std::mutex syncStateMutex;
+
+    uint64_t targetChainHeight = 0;  // Height we're trying to reach
+    std::chrono::steady_clock::time_point lastSyncRequest;
+
+    static const uint64_t BLOCKS_PER_REQUEST = 100;  // Request blocks in batches
+    
+    // Sync methods
+    void checkSyncStatus();
+    void requestBlockchain(std::shared_ptr<Peer> peer, uint64_t fromHeight);
+    void processReceivedChain(const std::vector<Block>& blocks, uint64_t startHeight);
+    bool needsSync() const;
 };
 
 } // namespace Radix

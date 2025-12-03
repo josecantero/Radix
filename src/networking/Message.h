@@ -44,7 +44,20 @@ struct WitnessResponsePayload {
     bool agrees; // True if the peer sees the same block at that height
 };
 
+// Blockchain Synchronization Payloads
+struct RequestChainPayload {
+    uint64_t startHeight;   // From which height to request blocks
+    uint64_t maxBlocks;     // Maximum number of blocks to send (batch size)
+};
+
+struct SendChainPayload {
+    uint64_t startHeight;   // Height of first block in payload
+    uint64_t blockCount;    // Number of blocks included
+    // Blocks are serialized sequentially in the message payload
+};
+
 } // namespace Radix
 
 
 #endif // RADIX_MESSAGE_H
+

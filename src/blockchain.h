@@ -79,6 +79,15 @@ public:
     // Retorna true si la carga fue exitosa y la cadena es válida.
     bool loadChain(const std::string& filename);
 
+    // ----------------------------------------------------------------------
+    // MÉTODOS DE SINCRONIZACIÓN (BLOCKCHAIN SYNC)
+    // ----------------------------------------------------------------------
+    // Obtiene múltiples bloques desde una altura específica
+    std::vector<Block> getBlocksFromHeight(uint64_t startHeight, uint64_t maxCount) const;
+    
+    // Obtiene un bloque en una altura específica (retorna nullptr si no existe)
+    const Block* getBlockAtHeight(uint64_t height) const;
+
 
 private:
     std::vector<Block> chain;
