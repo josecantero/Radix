@@ -40,15 +40,28 @@ void signalHandler(int signum) {
     g_running = false;
 }
 
+#include "wallet.h"
+
 int main(int argc, char* argv[]) {
     initializeOpenSSL();
     std::signal(SIGINT, signalHandler);
+    std::signal(SIGTERM, signalHandler);
 
     bool serverMode = false;
     int port = 8080;
     std::string connectPeer = "";
     bool mine = false;
-    std::string minerAddress = "radix_miner_default"; // Should be a real address
+    std::string minerAddress = "radix_miner_default"; 
+    
+    // CLI Commands
+    bool newWallet = false;
+    std::string walletFile = "";
+    bool getBalance = false;
+    std::string balanceAddress = "";
+    bool sendTx = false;
+    uint64_t sendAmount = 0;
+    std::string sendRecipient = "";
+    std::string sendWalletFile = "";
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--server") == 0) {
@@ -57,31 +70,86 @@ int main(int argc, char* argv[]) {
             port = std::stoi(argv[++i]);
         } else if (strcmp(argv[i], "--connect") == 0 && i + 1 < argc) {
             connectPeer = argv[++i];
-            serverMode = true; // Implies server mode to receive responses
+            serverMode = true; 
         } else if (strcmp(argv[i], "--mine") == 0) {
             mine = true;
         } else if (strcmp(argv[i], "--miner-addr") == 0 && i + 1 < argc) {
             minerAddress = argv[++i];
+        } else if (strcmp(argv[i], "--new-wallet") == 0 && i + 1 < argc) {
+            newWallet = true;
+            walletFile = argv[++i];
+        } else if (strcmp(argv[i], "--get-balance") == 0 && i + 1 < argc) {
+            getBalance = true;
+            balanceAddress = argv[++i];
+        } else if (strcmp(argv[i], "--send") == 0 && i + 3 < argc) {
+            sendTx = true;
+            sendAmount = std::stoull(argv[++i]);
+            sendRecipient = argv[++i];
+            sendWalletFile = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0) {
             printUsage(argv[0]);
+            std::cout << "  --new-wallet <file>  Crear nueva wallet y guardar en archivo\n"
+                      << "  --get-balance <addr> Consultar saldo de una direccion\n"
+                      << "  --send <amount> <dest> <wallet_file> Enviar transaccion\n";
             return 0;
         }
     }
 
+    // Handle CLI Commands first (non-daemon modes)
+    if (newWallet) {
+        Radix::Wallet wallet;
+        wallet.saveToFile(walletFile);
+        std::cout << "✅ Nueva wallet creada en: " << walletFile << std::endl;
+        std::cout << "   Direccion: " << wallet.getAddress() << std::endl;
+        return 0;
+    }
+
+    Radix::RandomXContext rxContext;
+    Radix::Blockchain blockchain(1, rxContext);
+    blockchain.loadChain("radix_blockchain.dat");
+
+    if (getBalance) {
+        uint64_t balance = blockchain.getBalanceOfAddress(balanceAddress);
+        std::cout << "💰 Balance de " << balanceAddress << ": " << Radix::formatRadsToRDX(balance) << " RDX" << std::endl;
+        return 0;
+    }
+
+    if (sendTx) {
+        try {
+            Radix::Wallet wallet(sendWalletFile);
+            std::cout << "💸 Creando transaccion..." << std::endl;
+            std::cout << "   Desde: " << wallet.getAddress() << std::endl;
+            std::cout << "   Para:  " << sendRecipient << std::endl;
+            std::cout << "   Monto: " << Radix::formatRadsToRDX(sendAmount) << " RDX" << std::endl;
+
+            Radix::Transaction tx = wallet.createTransaction(sendRecipient, sendAmount, blockchain.getUtxoSet());
+            
+            std::cout << "✅ Transaccion creada. ID: " << tx.id << std::endl;
+            
+            // Add to blockchain locally
+            blockchain.addTransaction(tx);
+            blockchain.saveChain("radix_blockchain.dat");
+            
+            // If we were connected to a network, we would broadcast here.
+            // For now, since this is a CLI tool, we just save to local chain.
+            // In a real scenario, we might want to connect to a node to broadcast.
+            std::cout << "✅ Transaccion guardada en mempool local." << std::endl;
+
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Error enviando transaccion: " << e.what() << std::endl;
+            return 1;
+        }
+        return 0;
+    }
+
     if (!serverMode && !mine) {
         std::cout << "Modo no especificado. Iniciando demo por defecto o usa --help.\n";
-        // Fallback to simple message or exit
         printUsage(argv[0]);
         return 0;
     }
 
     std::cout << "Iniciando Radix Node..." << std::endl;
     
-    Radix::RandomXContext rxContext;
-    // Load chain from disk or create new
-    Radix::Blockchain blockchain(1, rxContext);
-    blockchain.loadChain("radix_blockchain.dat");
-
     Radix::Node node(blockchain);
 
     if (serverMode) {

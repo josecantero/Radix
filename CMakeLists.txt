@@ -49,6 +49,7 @@ add_executable(radix_blockchain
     src/persistence_util.cpp
     src/networking/Node.cpp
     src/networking/Peer.cpp
+    src/wallet.cpp
 )
 
 # Enlazar bibliotecas
