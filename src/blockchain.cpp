@@ -383,6 +383,35 @@ Blockchain::BlockStatus Blockchain::submitBlock(const Block& block) {
     return BlockStatus::REJECTED_INVALID;
 }
 
+void Blockchain::applyReorganization(const Block& block) {
+    // 1. Find the ancestor (prevHash)
+    int ancestorIndex = getBlockHeight(block.prevHash);
+    
+    if (ancestorIndex == -1) {
+        std::cerr << "CRITICAL ERROR: Cannot apply reorganization. Ancestor block not found." << std::endl;
+        return;
+    }
+
+    std::cout << "⚠️  APPLYING REORGANIZATION ⚠️" << std::endl;
+    std::cout << "   Current Tip Height: " << getChainSize() - 1 << std::endl;
+    std::cout << "   New Tip Height: " << ancestorIndex + 1 << std::endl;
+    std::cout << "   Ancestor Hash: " << block.prevHash << std::endl;
+
+    // 2. Truncate the chain
+    // We keep blocks from 0 to ancestorIndex (inclusive)
+    // So we resize to ancestorIndex + 1
+    chain.resize(ancestorIndex + 1);
+
+    // 3. Add the new block
+    chain.push_back(block);
+
+    // 4. Rebuild UTXO Set to ensure consistency
+    // This is expensive but necessary for correctness after a reorg
+    rebuildUtxoSet();
+
+    std::cout << "✅ Reorganization applied successfully. New chain size: " << chain.size() << std::endl;
+}
+
 // ============================================================================
 // BLOCKCHAIN SYNCHRONIZATION METHODS
 // ============================================================================

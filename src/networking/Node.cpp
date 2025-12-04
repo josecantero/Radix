@@ -279,6 +279,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                     {
                         std::lock_guard<std::mutex> lock(witnessQueriesMutex);
                         activeWitnessQueries[newBlock.hash] = query;
+                        pendingWitnessBlocks[newBlock.hash] = std::make_shared<Block>(newBlock); // Store block for later
                     }
                     
                     // Send queries to selected witnesses
@@ -629,9 +630,14 @@ void Node::processWitnessQueryResult(const std::string& blockHash) {
         std::cout << "✅ DECISIÓN: MAYORÍA APRUEBA (" << agrees << "/" << total << ")\n";
         std::cout << "   El bloque puede ser considerado válido\n";
         std::cout << "═══════════════════════════════════════════════════\n\n";
-        // TODO: Here we should accept the block and apply reorganization
-        // This is complex and requires careful implementation
-        // For now, we just log the approval
+        
+        // Apply Reorganization
+        if (pendingWitnessBlocks.count(blockHash)) {
+            blockchain.applyReorganization(*pendingWitnessBlocks[blockHash]);
+            pendingWitnessBlocks.erase(blockHash);
+        } else {
+            std::cerr << "❌ Error: Bloque pendiente no encontrado para reorg: " << blockHash << std::endl;
+        }
     } else if (disagrees > agrees) {
         std::cout << "❌ DECISIÓN: MAYORÍA RECHAZA (" << disagrees << "/" << total << ")\n";
         std::cout << "   ⚠️  ATAQUE 51% DETECTADO\n";

@@ -25,6 +25,10 @@ RandomXContext::RandomXContext() : flags(RANDOMX_FLAG_DEFAULT), vm(nullptr), cac
         throw std::runtime_error("Failed to allocate RandomX dataset.");
     }
 
+    // Initialize cache with a default seed to satisfy randomx_create_vm requirement
+    std::string defaultSeed = "radix_genesis_seed";
+    randomx_init_cache(cache, defaultSeed.data(), defaultSeed.size());
+
     // Allocate the VM (virtual machine)
     // Order of randomx_create_vm arguments was already corrected
     vm = randomx_create_vm(flags, cache, dataset);

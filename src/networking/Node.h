@@ -73,6 +73,7 @@ private:
     
     // Witnessing state
     std::map<std::string, WitnessQuery> activeWitnessQueries;
+    std::map<std::string, std::shared_ptr<Block>> pendingWitnessBlocks; // Blocks waiting for witness approval
     std::mutex witnessQueriesMutex;
     
     std::vector<BannedPeer> bannedPeers;

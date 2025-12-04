@@ -40,6 +40,10 @@ public:
     // Submit a block received from the network
     BlockStatus submitBlock(const Block& block);
 
+    // Apply a reorganization (truncate chain and add new block)
+    // Should be called only after witnessing approval
+    void applyReorganization(const Block& block);
+
     // Mina las transacciones pendientes y crea un nuevo bloque
     // Ahora recibe el RandomXContext y el flag de ejecución
     void minePendingTransactions(const std::string& miningRewardAddress, const std::atomic<bool>& running);
