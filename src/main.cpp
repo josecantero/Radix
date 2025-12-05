@@ -9,6 +9,8 @@
 #include "networking/Node.h"
 #include "randomx_util.h"
 #include "money_util.h"
+#include "wallet.h"
+#include "api/RpcServer.h"
 #include <openssl/provider.h>
 
 void initializeOpenSSL() {
@@ -27,6 +29,7 @@ void printUsage(const char* progName) {
               << "  --connect <ip:port> Conectar a un peer inicial\n"
               << "  --mine            Habilitar mineria automatica\n"
               << "  --miner-addr <addr> Direccion de recompensa para mineria\n"
+              << "  --rpc             Habilitar servidor RPC (default: 8090)\n"
               << "  --help            Mostrar esta ayuda\n";
 }
 
@@ -40,8 +43,6 @@ void signalHandler(int signum) {
     g_running = false;
 }
 
-#include "wallet.h"
-
 int main(int argc, char* argv[]) {
     initializeOpenSSL();
     std::signal(SIGINT, signalHandler);
@@ -50,8 +51,9 @@ int main(int argc, char* argv[]) {
     bool serverMode = false;
     int port = 8080;
     std::string connectPeer = "";
-    bool mine = false;
+    bool mineMode = false; // Renamed from 'mine' to avoid conflict with new 'mine' variable in RPC context
     std::string minerAddress = "radix_miner_default"; 
+    bool rpcEnabled = false;
     
     // CLI Commands
     bool newWallet = false;
@@ -72,9 +74,11 @@ int main(int argc, char* argv[]) {
             connectPeer = argv[++i];
             serverMode = true; 
         } else if (strcmp(argv[i], "--mine") == 0) {
-            mine = true;
+            mineMode = true;
         } else if (strcmp(argv[i], "--miner-addr") == 0 && i + 1 < argc) {
             minerAddress = argv[++i];
+        } else if (strcmp(argv[i], "--rpc") == 0) {
+            rpcEnabled = true;
         } else if (strcmp(argv[i], "--new-wallet") == 0 && i + 1 < argc) {
             newWallet = true;
             walletFile = argv[++i];
@@ -127,14 +131,31 @@ int main(int argc, char* argv[]) {
             std::cout << "✅ Transaccion creada. ID: " << tx.id << std::endl;
             
             // Add to blockchain locally
-            blockchain.addTransaction(tx);
-            blockchain.saveChain("radix_blockchain.dat");
-            
-            // If we were connected to a network, we would broadcast here.
-            // For now, since this is a CLI tool, we just save to local chain.
-            // In a real scenario, we might want to connect to a node to broadcast.
-            std::cout << "✅ Transaccion guardada en mempool local." << std::endl;
+            if (blockchain.addTransaction(tx)) {
+                std::cout << "DEBUG (isValid): Transaccion valida." << std::endl;
+                std::cout << "Transaccion " << tx.id << " anadida a la piscina de pendientes." << std::endl;
+                
+                blockchain.saveChain("radix_blockchain.dat");
+                std::cout << "✅ Transaccion guardada en mempool local." << std::endl;
 
+                // Broadcast to network
+                std::cout << "📡 Propagando transaccion a la red..." << std::endl;
+                Radix::Node node(blockchain);
+                node.discoverPeers(); // Connect to seeds/peers
+                
+                // Give it a moment to connect
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                
+                node.broadcastTransaction(tx);
+                std::cout << "✅ Transaccion enviada a los peers." << std::endl;
+                
+                // Give it a moment to send before exiting
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            } else {
+                std::cerr << "❌ Error: La transaccion fue rechazada por la blockchain (posible doble gasto o invalida)." << std::endl;
+                return 1;
+            }
         } catch (const std::exception& e) {
             std::cerr << "❌ Error enviando transaccion: " << e.what() << std::endl;
             return 1;
@@ -142,45 +163,54 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (!serverMode && !mine) {
+    if (!serverMode && !mineMode && !rpcEnabled) {
         std::cout << "Modo no especificado. Iniciando demo por defecto o usa --help.\n";
         printUsage(argv[0]);
         return 0;
     }
 
-    std::cout << "Iniciando Radix Node..." << std::endl;
-    
+    // Start Node
     Radix::Node node(blockchain);
+    
+    // Start RPC Server if requested
+    std::unique_ptr<Radix::RpcServer> rpcServer;
+    if (rpcEnabled) {
+        rpcServer = std::make_unique<Radix::RpcServer>(blockchain, node);
+        rpcServer->start(8090); // Default RPC port
+        std::cout << "✅ RPC Server started on port 8090" << std::endl;
+    }
 
     if (serverMode) {
-        node.startServer(port);
-    }
-    
-    // Start Peer Discovery
-    node.discoverPeers();
+        std::cout << "Iniciando Radix Node..." << std::endl;
+        
+        // Start server in a separate thread so we can mine in main thread if needed
+        std::thread serverThread([&node, port]() {
+            node.startServer(port);
+        });
+        serverThread.detach();
 
-    if (!connectPeer.empty()) {
-        size_t colonPos = connectPeer.find(':');
-        if (colonPos != std::string::npos) {
-            std::string ip = connectPeer.substr(0, colonPos);
-            int p = std::stoi(connectPeer.substr(colonPos + 1));
-            std::cout << "Conectando a peer " << ip << ":" << p << "..." << std::endl;
-            node.connectToPeer(ip, p);
-        } else {
-            std::cerr << "Formato de peer invalido. Use ip:port" << std::endl;
+        // Peer Discovery
+        node.discoverPeers();
+
+        if (!connectPeer.empty()) {
+            size_t colonPos = connectPeer.find(':');
+            if (colonPos != std::string::npos) {
+                std::string ip = connectPeer.substr(0, colonPos);
+                int p = std::stoi(connectPeer.substr(colonPos + 1));
+                std::cout << "Conectando a peer " << ip << ":" << p << "..." << std::endl;
+                node.connectToPeer(ip, p);
+            } else {
+                std::cerr << "Formato de peer invalido. Use ip:port" << std::endl;
+            }
         }
-    }
 
-    std::thread miningThread;
-    if (mine) {
-        std::cout << "Mineria habilitada. Minando para: " << minerAddress << std::endl;
-        // Mining loop in a separate thread
-        miningThread = std::thread([&blockchain, &node, minerAddress]() {
+        if (mineMode) {
+            std::cout << "Mineria habilitada. Minando para: " << minerAddress << std::endl;
+            std::cout << "Nodo corriendo. Presione Ctrl+C para salir." << std::endl;
+            
+            // Main mining loop
             while (g_running) {
-                // Check if we have transactions or just mine empty blocks?
-                // For now, mine continuously
                 blockchain.minePendingTransactions(minerAddress, g_running);
-                
                 if (!g_running) break;
 
                 // Broadcast new block
@@ -189,22 +219,27 @@ int main(int argc, char* argv[]) {
                 
                 std::this_thread::sleep_for(std::chrono::seconds(1)); // Throttle
             }
-        });
-    }
-
-    // Keep main thread alive
-    std::cout << "Nodo corriendo. Presione Ctrl+C para salir." << std::endl;
-    while (g_running) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    std::cout << "Guardando blockchain y cerrando..." << std::endl;
-    blockchain.saveChain("radix_blockchain.dat");
-    node.stop();
-    
-    if (miningThread.joinable()) {
-        std::cout << "Esperando a que el hilo de mineria termine..." << std::endl;
-        miningThread.join();
+        } else {
+            std::cout << "Nodo corriendo en modo solo servidor. Presione Ctrl+C para salir." << std::endl;
+            while (g_running) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }
+        
+        std::cout << "Guardando blockchain y cerrando..." << std::endl;
+        blockchain.saveChain("radix_blockchain.dat");
+        node.stop();
+        if (rpcServer) rpcServer->stop();
+    } else if (rpcEnabled) { // If only RPC is enabled, but not serverMode
+        std::cout << "RPC Server corriendo. Presione Ctrl+C para salir." << std::endl;
+        while (g_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        std::cout << "Guardando blockchain y cerrando..." << std::endl;
+        blockchain.saveChain("radix_blockchain.dat");
+        if (rpcServer) rpcServer->stop();
+    } else { // This case should ideally not be reached if the initial check is correct
+        std::cout << "Modo no especificado. Saliendo." << std::endl;
     }
 
     return 0;

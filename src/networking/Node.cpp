@@ -21,8 +21,7 @@ Node::~Node() {
 }
 
 void Node::startServer(int port) {
-    if (running) return;
-
+    this->myPort = port;
     serverSocketFd = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocketFd == -1) {
         std::cerr << "Error al crear el socket del servidor." << std::endl;
@@ -103,7 +102,7 @@ bool Node::connectToPeer(const std::string& ip, int port) {
     }
 
     if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        std::cerr << "Conexion fallida a " << ip << ":" << port << std::endl;
+        std::cerr << "Conexion fallida a " << ip << ":" << port << " Error: " << strerror(errno) << std::endl;
         close(sock);
         return false;
     }
@@ -197,6 +196,23 @@ void Node::handlePeer(std::shared_ptr<Peer> peer) {
     // Remove peer from list
     std::lock_guard<std::mutex> lock(peersMutex);
     peers.erase(std::remove(peers.begin(), peers.end(), peer), peers.end());
+}
+
+void Node::broadcastTransaction(const Transaction& tx) {
+    Message msg;
+    msg.header.magic = RADIX_NETWORK_MAGIC;
+    msg.header.type = MessageType::NEW_TRANSACTION;
+    
+    std::stringstream ss;
+    tx.serialize(ss);
+    std::string data = ss.str();
+    
+    msg.payload.assign(data.begin(), data.end());
+    msg.header.payloadSize = msg.payload.size();
+    msg.header.checksum = 0; // TODO: Calculate checksum
+
+    std::cout << "DEBUG: Broadcasting transaction to " << peers.size() << " peers." << std::endl;
+    broadcast(msg);
 }
 
 void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
@@ -389,6 +405,34 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             saveKnownPeers("radix_peers.dat");
             break;
         }
+
+        case MessageType::NEW_TRANSACTION: {
+            std::cout << "💸 Recibida NUEVA TRANSACCION de " << peer->getIpAddress() << std::endl;
+            
+            if (msg.payload.empty()) break;
+
+            try {
+                std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
+                Transaction tx;
+                tx.deserialize(ss);
+                
+                std::cout << "   ID: " << tx.id << std::endl;
+
+                // Try to add to our mempool
+                if (blockchain.addTransaction(tx)) {
+                    std::cout << "✅ Transaccion valida y agregada al mempool." << std::endl;
+                    // Re-broadcast to others (Gossip)
+                    broadcastTransaction(tx);
+                } else {
+                    std::cout << "⚠️ Transaccion rechazada o ya conocida." << std::endl;
+                }
+
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Error procesando transaccion: " << e.what() << std::endl;
+            }
+            break;
+        }
+
         case MessageType::REQUEST_CHAIN: {
             if (msg.payload.size() != sizeof(RequestChainPayload)) break;
             
@@ -466,19 +510,8 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             }
             break;
         }
-        case MessageType::NEW_TRANSACTION: {
-            std::cout << "Recibida NUEVA TRANSACCION de " << peer->getIpAddress() << std::endl;
-            if (msg.payload.empty()) break;
-            try {
-                std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
-                Transaction tx;
-                tx.deserialize(ss);
-                blockchain.addTransaction(tx);
-            } catch (const std::exception& e) {
-                std::cerr << "Error procesando transaccion recibida: " << e.what() << std::endl;
-            }
-            break;
-        }
+
+
         case MessageType::WITNESS_QUERY: {
             if (msg.payload.size() != sizeof(WitnessQueryPayload)) {
                 std::cerr << "Payload de WITNESS_QUERY invalido." << std::endl;
@@ -957,16 +990,10 @@ void Node::discoverPeers() {
             int port = std::stoi(peerAddr.substr(colonPos + 1));
             
             // Don't connect to self
-            // We can check if the port matches our server port (if we stored it)
-            // For now, let's just assume we shouldn't connect to our own hardcoded seed if we are that seed.
-            // But we don't know our own IP/Port easily here without storing it in Node.
-            
-            // Better check: If connectToPeer returns false because it's us, that's fine.
-            // But to avoid the log "Connected successfully to self", we should fix connectToPeer or check here.
-            
-            // Let's just rely on the fact that a real node won't be 127.0.0.1 in production usually.
-            // For this test, we can ignore it or add a member `myPort` to Node.
-            
+            if (myPort != 0 && port == myPort && ip == "127.0.0.1") {
+                continue;
+            }
+
             if (connectToPeer(ip, port)) {
                 connectedCount++;
             }

@@ -57,13 +57,23 @@ Block Blockchain::createGenesisBlock() {
 }
 
 // Añade una transacción a las transacciones pendientes
-void Blockchain::addTransaction(const Radix::Transaction& transaction) {
+bool Blockchain::addTransaction(const Radix::Transaction& transaction) {
     // Validar la transacción antes de añadirla a la piscina
     if (!transaction.isValid(utxoSet)) {
-        throw std::runtime_error("Transaccion invalida. No se puede anadir a la piscina de transacciones pendientes.");
+        std::cerr << "Transaccion invalida. No se puede anadir a la piscina de transacciones pendientes." << std::endl;
+        return false;
     }
+    
+    // Check for duplicates in pendingTransactions
+    for (const auto& tx : pendingTransactions) {
+        if (tx.id == transaction.id) {
+            return false; // Already have it
+        }
+    }
+
     pendingTransactions.push_back(transaction);
     std::cout << "Transaccion " << transaction.id << " anadida a la piscina de pendientes." << std::endl;
+    return true;
 }
 
 // Mina las transacciones pendientes y crea un nuevo bloque

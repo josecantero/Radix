@@ -34,6 +34,9 @@ public:
     // Broadcast a new block to all connected peers
     void broadcastBlock(const Block& block);
 
+    // Broadcast a new transaction to all connected peers
+    void broadcastTransaction(const Transaction& tx);
+
     // Load/save banned peers list
     void loadBannedPeers(const std::string& filename);
     void saveBannedPeers(const std::string& filename) const;
@@ -92,7 +95,9 @@ private:
     std::atomic<bool> running;
     std::thread serverThread;
     std::thread witnessingMonitorThread;
+
     int serverSocketFd = -1; // Initialize to -1
+    int myPort = 0; // Port this node is listening on
 
     // ------------------------------------------------------------------------
     // BLOCKCHAIN SYNCHRONIZATION

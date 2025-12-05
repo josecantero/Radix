@@ -50,6 +50,7 @@ add_executable(radix_blockchain
     src/networking/Node.cpp
     src/networking/Peer.cpp
     src/wallet.cpp
+    src/api/RpcServer.cpp
 )
 
 # Enlazar bibliotecas

@@ -26,7 +26,7 @@ public:
 
     // Añade una transacción a las transacciones pendientes
     // Ahora valida la transacción contra el UTXOSet actual
-    void addTransaction(const Radix::Transaction& transaction);
+    bool addTransaction(const Radix::Transaction& transaction);
 
     // Enum for block submission result
     enum class BlockStatus {
