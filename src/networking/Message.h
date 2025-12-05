@@ -16,7 +16,10 @@ enum class MessageType : uint8_t {
     SEND_CHAIN = 0x06,
     // Witnessing Protocol
     WITNESS_QUERY = 0x10,
-    WITNESS_RESPONSE = 0x11
+    WITNESS_RESPONSE = 0x11,
+    // Peer Discovery
+    GET_PEERS = 0x20,
+    PEER_LIST = 0x21
 };
 
 const uint32_t RADIX_NETWORK_MAGIC = 0xD9B4BEF9;

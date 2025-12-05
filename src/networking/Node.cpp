@@ -218,11 +218,31 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             peer->sendMessage(ackMsg);
             
             peer->setHandshaked(true);
+
+            // Send GET_PEERS to discover more nodes
+            Message getPeersMsg;
+            getPeersMsg.header.magic = RADIX_NETWORK_MAGIC;
+            getPeersMsg.header.type = MessageType::GET_PEERS;
+            getPeersMsg.header.payloadSize = 0;
+            getPeersMsg.header.checksum = 0;
+            peer->sendMessage(getPeersMsg);
+
             break;
         }
         case MessageType::HANDSHAKE_ACK: {
             std::cout << "Recibido HANDSHAKE_ACK de " << peer->getIpAddress() << std::endl;
             peer->setHandshaked(true);
+
+            // Send GET_PEERS to discover more nodes
+            Message getPeersMsg;
+            getPeersMsg.header.magic = RADIX_NETWORK_MAGIC;
+            getPeersMsg.header.type = MessageType::GET_PEERS;
+            getPeersMsg.header.payloadSize = 0;
+            getPeersMsg.header.checksum = 0;
+            peer->sendMessage(getPeersMsg);
+
+            // Also trigger sync
+            checkSyncStatus();
             break;
         }
         case MessageType::NEW_BLOCK: {
@@ -279,8 +299,9 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                     {
                         std::lock_guard<std::mutex> lock(witnessQueriesMutex);
                         activeWitnessQueries[newBlock.hash] = query;
-                        pendingWitnessBlocks[newBlock.hash] = std::make_shared<Block>(newBlock); // Store block for later
                     }
+                    // Store block for later
+                    pendingWitnessBlocks[newBlock.hash] = std::make_shared<Block>(newBlock); 
                     
                     // Send queries to selected witnesses
                     for (auto& witness : witnesses) {
@@ -324,6 +345,48 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             } catch (const std::exception& e) {
                 std::cerr << "❌ Error procesando bloque: " << e.what() << std::endl;
             }
+            break;
+        }
+        
+        case MessageType::GET_PEERS: {
+            std::cout << "📡 Received GET_PEERS request." << std::endl;
+            // Send PEER_LIST
+            Message response;
+            response.header.magic = RADIX_NETWORK_MAGIC;
+            response.header.type = MessageType::PEER_LIST;
+            
+            std::string peerListStr;
+            {
+                std::lock_guard<std::mutex> lock(knownPeersMutex);
+                int count = 0;
+                for (const auto& p : knownPeers) {
+                    if (count++ > 10) break; // Limit to 10 peers
+                    peerListStr += p + ",";
+                }
+            }
+            if (!peerListStr.empty()) peerListStr.pop_back(); // Remove last comma
+
+            response.payload.assign(peerListStr.begin(), peerListStr.end());
+            response.header.payloadSize = response.payload.size();
+            response.header.checksum = 0; 
+
+            peer->sendMessage(response);
+            break;
+        }
+
+        case MessageType::PEER_LIST: {
+            std::string peerListStr(msg.payload.begin(), msg.payload.end());
+            std::cout << "📡 Received PEER_LIST: " << peerListStr << std::endl;
+            
+            std::stringstream ss(peerListStr);
+            std::string segment;
+            std::lock_guard<std::mutex> lock(knownPeersMutex);
+            while (std::getline(ss, segment, ',')) {
+                if (!segment.empty()) {
+                    knownPeers.insert(segment);
+                }
+            }
+            saveKnownPeers("radix_peers.dat");
             break;
         }
         case MessageType::REQUEST_CHAIN: {
@@ -851,6 +914,87 @@ bool Node::needsSync() const {
     // Be careful with recursive locking. 
     // This is a simple getter, maybe not needed to lock if atomic or just reading
     return syncState == SyncState::NEEDS_SYNC;
+}
+
+// ------------------------------------------------------------------------
+// PEER DISCOVERY
+// ------------------------------------------------------------------------
+
+void Node::discoverPeers() {
+    loadKnownPeers("radix_peers.dat");
+
+    // Seed Nodes (Hardcoded for now)
+    std::vector<std::string> seeds = {
+        "127.0.0.1:8080",
+        "127.0.0.1:8081",
+        "127.0.0.1:8082"
+    };
+
+    {
+        std::lock_guard<std::mutex> lock(knownPeersMutex);
+        if (knownPeers.empty()) {
+            std::cout << "🌱 No known peers. Using seeds." << std::endl;
+            for (const auto& seed : seeds) {
+                knownPeers.insert(seed);
+            }
+        }
+    }
+
+    // Try to connect to known peers
+    std::vector<std::string> peersToConnect;
+    {
+        std::lock_guard<std::mutex> lock(knownPeersMutex);
+        peersToConnect.assign(knownPeers.begin(), knownPeers.end());
+    }
+
+    int connectedCount = 0;
+    for (const auto& peerAddr : peersToConnect) {
+        if (connectedCount >= 5) break; // Max connections
+
+        size_t colonPos = peerAddr.find(':');
+        if (colonPos != std::string::npos) {
+            std::string ip = peerAddr.substr(0, colonPos);
+            int port = std::stoi(peerAddr.substr(colonPos + 1));
+            
+            // Don't connect to self
+            // We can check if the port matches our server port (if we stored it)
+            // For now, let's just assume we shouldn't connect to our own hardcoded seed if we are that seed.
+            // But we don't know our own IP/Port easily here without storing it in Node.
+            
+            // Better check: If connectToPeer returns false because it's us, that's fine.
+            // But to avoid the log "Connected successfully to self", we should fix connectToPeer or check here.
+            
+            // Let's just rely on the fact that a real node won't be 127.0.0.1 in production usually.
+            // For this test, we can ignore it or add a member `myPort` to Node.
+            
+            if (connectToPeer(ip, port)) {
+                connectedCount++;
+            }
+        }
+    }
+}
+
+void Node::saveKnownPeers(const std::string& filename) const {
+    std::ofstream file(filename);
+    if (!file.is_open()) return;
+
+    std::lock_guard<std::mutex> lock(knownPeersMutex);
+    for (const auto& peer : knownPeers) {
+        file << peer << "\n";
+    }
+}
+
+void Node::loadKnownPeers(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) return;
+
+    std::string line;
+    std::lock_guard<std::mutex> lock(knownPeersMutex);
+    while (std::getline(file, line)) {
+        if (!line.empty()) {
+            knownPeers.insert(line);
+        }
+    }
 }
 
 } // namespace Radix

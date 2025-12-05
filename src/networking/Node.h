@@ -7,6 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <map>
+#include <set>
 #include <chrono>
 #include "Peer.h"
 #include "../blockchain.h"
@@ -36,6 +37,11 @@ public:
     // Load/save banned peers list
     void loadBannedPeers(const std::string& filename);
     void saveBannedPeers(const std::string& filename) const;
+
+    // Peer Discovery
+    void discoverPeers();
+    void saveKnownPeers(const std::string& filename) const;
+    void loadKnownPeers(const std::string& filename);
 
 private:
     // Witnessing structures
@@ -78,6 +84,10 @@ private:
     
     std::vector<BannedPeer> bannedPeers;
     mutable std::mutex bannedPeersMutex;
+
+    // Peer Discovery State
+    std::set<std::string> knownPeers;
+    mutable std::mutex knownPeersMutex;
     
     std::atomic<bool> running;
     std::thread serverThread;

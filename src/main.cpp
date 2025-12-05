@@ -155,6 +155,9 @@ int main(int argc, char* argv[]) {
     if (serverMode) {
         node.startServer(port);
     }
+    
+    // Start Peer Discovery
+    node.discoverPeers();
 
     if (!connectPeer.empty()) {
         size_t colonPos = connectPeer.find(':');
