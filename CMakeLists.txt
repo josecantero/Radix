@@ -35,9 +35,10 @@ endif()
 # Encontrar y enlazar OpenSSL
 find_package(OpenSSL REQUIRED)
 
-# Añadir ejecutables
-add_executable(radix_blockchain
-    src/main.cpp
+# ============================================================================
+# RADIX CORE LIBRARY (shared between main executable and tests)
+# ============================================================================
+add_library(radix_core STATIC
     src/blockchain.cpp
     src/block.cpp
     src/transaction.cpp
@@ -53,11 +54,43 @@ add_executable(radix_blockchain
     src/api/RpcServer.cpp
 )
 
-# Enlazar bibliotecas
-target_link_libraries(radix_blockchain
-    ${RANDOMX_LIBRARY} #
-    ${OPENSSL_LIBRARIES} # Enlace a las bibliotecas de OpenSSL
+# Link libraries to core
+target_link_libraries(radix_core
+    ${RANDOMX_LIBRARY}
+    ${OPENSSL_LIBRARIES}
 )
+
+# ============================================================================
+# MAIN EXECUTABLE
+# ============================================================================
+add_executable(radix_blockchain
+    src/main.cpp
+)
+
+# Enlazar con radix_core library
+target_link_libraries(radix_blockchain
+    radix_core
+)
+
+# ============================================================================
+# GOOGLE TEST INTEGRATION
+# ============================================================================
+include(FetchContent)
+
+# Download Google Test
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+# For Windows: Prevent overriding parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+# Enable testing
+enable_testing()
+
+# Add tests subdirectory
+add_subdirectory(tests)
 
 # Si OpenSSL no se encuentra automáticamente, puedes intentar especificar los directorios manualmente:
 # set(OPENSSL_ROOT_DIR "/usr/local/opt/openssl@1.1") # Ejemplo para macOS con Homebrew

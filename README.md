@@ -105,6 +105,12 @@ radix_blockchain/
 │   ├── money_util.cpp/h           # Currency formatting (RDX)
 │   ├── persistence_util.cpp/h     # Binary serialization
 │   └── main.cpp                   # CLI entry point
+├── tests/
+│   ├── test_crypto.cpp            # Cryptography unit tests
+│   ├── test_transaction.cpp       # Transaction unit tests
+│   ├── test_block.cpp             # Block unit tests
+│   ├── test_blockchain.cpp        # Blockchain unit tests
+│   └── CMakeLists.txt             # Test build configuration
 ├── CMakeLists.txt                 # Build configuration
 └── README.md                      # This file
 ```
@@ -470,7 +476,32 @@ make
 ```
 
 ### Running Tests
-> ⚠️ **TODO**: Unit tests with Google Test framework (planned for Phase 1)
+
+The project includes a comprehensive test suite using **Google Test** framework with **36 unit tests** covering all core components.
+
+#### Build and Run All Tests
+```bash
+cd build
+cmake --build . --target radix_tests
+ctest --output-on-failure
+```
+
+#### Test Coverage
+- ✅ **Crypto Tests** (6/6): Key generation, signing, address derivation
+- ✅ **Transaction Tests** (8/8): Coinbase, UTXO, serialization
+- ✅ **Block Tests** (8/8): Mining, validation, Merkle trees
+- ✅ **Blockchain Tests** (12/12): Chain management, persistence, UTXO set
+
+#### Run Specific Test Suite
+```bash
+cd build
+./tests/radix_tests --gtest_filter=CryptoTest.*
+./tests/radix_tests --gtest_filter=TransactionTest.*
+./tests/radix_tests --gtest_filter=BlockTest.*
+./tests/radix_tests --gtest_filter=BlockchainTest.*
+```
+
+**Current Status**: 🟢 100% tests passing (36/36)
 
 ---
 
@@ -481,8 +512,8 @@ make
 - [x] P2P networking
 - [x] Wallet and transactions
 - [x] Basic RPC API
+- [x] Unit tests (Google Test) - 36 tests, 100% passing
 - [ ] Comprehensive documentation
-- [ ] Unit tests (Google Test)
 - [ ] Docker containerization
 - [ ] Configuration file support
 
