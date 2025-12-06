@@ -120,7 +120,7 @@ bool Node::connectToPeer(const std::string& ip, int port) {
     handshakeMsg.header.magic = RADIX_NETWORK_MAGIC;
     handshakeMsg.header.type = MessageType::HANDSHAKE;
     handshakeMsg.header.payloadSize = 0;
-    handshakeMsg.header.checksum = 0; // TODO: Implement checksum
+    handshakeMsg.header.checksum = calculateChecksum(handshakeMsg.payload);
     
     peer->sendMessage(handshakeMsg);
 
@@ -142,7 +142,6 @@ void Node::broadcastBlock(const Block& block) {
     Message msg;
     msg.header.magic = RADIX_NETWORK_MAGIC;
     msg.header.type = MessageType::NEW_BLOCK;
-    msg.header.checksum = 0;
 
     // Serialize block to payload
     std::stringstream ss;
@@ -151,6 +150,7 @@ void Node::broadcastBlock(const Block& block) {
 
     msg.header.payloadSize = serializedBlock.size();
     msg.payload.assign(serializedBlock.begin(), serializedBlock.end());
+    msg.header.checksum = calculateChecksum(msg.payload);
 
     broadcast(msg);
 }
@@ -209,7 +209,7 @@ void Node::broadcastTransaction(const Transaction& tx) {
     
     msg.payload.assign(data.begin(), data.end());
     msg.header.payloadSize = msg.payload.size();
-    msg.header.checksum = 0; // TODO: Calculate checksum
+    msg.header.checksum = calculateChecksum(msg.payload);
 
     std::cout << "DEBUG: Broadcasting transaction to " << peers.size() << " peers." << std::endl;
     broadcast(msg);
@@ -222,6 +222,14 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
         return;
     }
 
+    // Validate checksum for message integrity
+    if (!validateChecksum(msg)) {
+        std::cerr << "❌ Checksum inválido de " << peer->getIpAddress() << std::endl;
+        std::cerr << "   Posible corrupción de datos o ataque MITM" << std::endl;
+        peer->closeConnection();
+        return;
+    }
+
     switch (msg.header.type) {
         case MessageType::HANDSHAKE: {
             std::cout << "Recibido HANDSHAKE de " << peer->getIpAddress() << std::endl;
@@ -230,7 +238,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             ackMsg.header.magic = RADIX_NETWORK_MAGIC;
             ackMsg.header.type = MessageType::HANDSHAKE_ACK;
             ackMsg.header.payloadSize = 0;
-            ackMsg.header.checksum = 0;
+            ackMsg.header.checksum = calculateChecksum(ackMsg.payload);
             peer->sendMessage(ackMsg);
             
             peer->setHandshaked(true);
@@ -240,7 +248,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             getPeersMsg.header.magic = RADIX_NETWORK_MAGIC;
             getPeersMsg.header.type = MessageType::GET_PEERS;
             getPeersMsg.header.payloadSize = 0;
-            getPeersMsg.header.checksum = 0;
+            getPeersMsg.header.checksum = calculateChecksum(getPeersMsg.payload);
             peer->sendMessage(getPeersMsg);
 
             break;
@@ -254,7 +262,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             getPeersMsg.header.magic = RADIX_NETWORK_MAGIC;
             getPeersMsg.header.type = MessageType::GET_PEERS;
             getPeersMsg.header.payloadSize = 0;
-            getPeersMsg.header.checksum = 0;
+            getPeersMsg.header.checksum = calculateChecksum(getPeersMsg.payload);
             peer->sendMessage(getPeersMsg);
 
             // Also trigger sync
@@ -279,13 +287,21 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 Block newBlock(0, "", {}, 0, dummyContext); 
                 newBlock.deserialize(ss);
 
+                // Check if we've already seen this block (prevent broadcast loops)
+                if (hasSeenBlock(newBlock.hash)) {
+                    std::cout << "⏭️  Bloque ya visto - ignorando rebroadcast" << std::endl;
+                    break;
+                }
+                
+                // Mark as seen BEFORE processing to prevent re-entrance
+                markBlockAsSeen(newBlock.hash);
+
                 Blockchain::BlockStatus status = blockchain.submitBlock(newBlock);
 
                 if (status == Blockchain::BlockStatus::ACCEPTED) {
                     std::cout << "✅ Bloque ACEPTADO. Altura: " << blockchain.getChainSize() - 1 << std::endl;
-                    // Re-broadcast to other peers
-                    // TODO: Implement "seen" cache to avoid broadcast loops
-                    broadcastBlock(newBlock); 
+                    // Re-broadcast to other peers (now protected against loops)
+                    broadcastBlock(newBlock);  
                     
                 } else if (status == Blockchain::BlockStatus::REQUIRES_WITNESSING) {
                     std::cout << "\n⚠️⚠️⚠️  REORGANIZACIÓN PROFUNDA DETECTADA  ⚠️⚠️⚠️\n";
@@ -330,7 +346,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                         queryMsg.header.magic = RADIX_NETWORK_MAGIC;
                         queryMsg.header.type = MessageType::WITNESS_QUERY;
                         queryMsg.header.payloadSize = sizeof(queryPayload);
-                        queryMsg.header.checksum = 0;
+                        queryMsg.header.checksum = calculateChecksum(queryMsg.payload);
                         queryMsg.payload.resize(sizeof(queryPayload));
                         std::memcpy(queryMsg.payload.data(), &queryPayload, sizeof(queryPayload));
                         
@@ -384,7 +400,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
             response.payload.assign(peerListStr.begin(), peerListStr.end());
             response.header.payloadSize = response.payload.size();
-            response.header.checksum = 0; 
+            response.header.checksum = calculateChecksum(response.payload); 
 
             peer->sendMessage(response);
             break;
@@ -418,10 +434,19 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 
                 std::cout << "   ID: " << tx.id << std::endl;
 
+                // Check if we've already seen this transaction (prevent broadcast loops)
+                if (hasSeenTransaction(tx.id)) {
+                    std::cout << "⏭️  Transacción ya vista - ignorando rebroadcast" << std::endl;
+                    break;
+                }
+                
+                // Mark as seen
+                markTransactionAsSeen(tx.id);
+
                 // Try to add to our mempool
                 if (blockchain.addTransaction(tx)) {
                     std::cout << "✅ Transaccion valida y agregada al mempool." << std::endl;
-                    // Re-broadcast to others (Gossip)
+                    // Re-broadcast to others (Gossip) - now protected against loops
                     broadcastTransaction(tx);
                 } else {
                     std::cout << "⚠️ Transaccion rechazada o ya conocida." << std::endl;
@@ -469,7 +494,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             response.header.magic = RADIX_NETWORK_MAGIC;
             response.header.type = MessageType::SEND_CHAIN;
             response.header.payloadSize = serialized.size();
-            response.header.checksum = 0;
+            response.header.checksum = calculateChecksum(response.payload);
             response.payload.assign(serialized.begin(), serialized.end());
             
             std::cout << "   Enviando " << blockCount << " bloque(s)" << std::endl;
@@ -534,7 +559,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             respMsg.header.magic = RADIX_NETWORK_MAGIC;
             respMsg.header.type = MessageType::WITNESS_RESPONSE;
             respMsg.header.payloadSize = sizeof(resp);
-            respMsg.header.checksum = 0;
+            respMsg.header.checksum = calculateChecksum(respMsg.payload);
             respMsg.payload.resize(sizeof(resp));
             std::memcpy(respMsg.payload.data(), &resp, sizeof(resp));
             
@@ -640,6 +665,13 @@ void Node::monitorWitnessingTimeouts() {
             } else {
                 ++it;
             }
+        }
+        
+        // Clean up seen caches periodically (every 30 seconds)
+        static auto lastCacheCleanup = std::chrono::steady_clock::now();
+        if ((now - lastCacheCleanup) > std::chrono::seconds(30)) {
+            cleanupSeenCaches();
+            lastCacheCleanup = now;
         }
     }
 }
@@ -875,9 +907,9 @@ void Node::requestBlockchain(std::shared_ptr<Peer> peer, uint64_t fromHeight) {
     msg.header.magic = RADIX_NETWORK_MAGIC;
     msg.header.type = MessageType::REQUEST_CHAIN;
     msg.header.payloadSize = sizeof(payload);
-    msg.header.checksum = 0;
     msg.payload.resize(sizeof(payload));
     std::memcpy(msg.payload.data(), &payload, sizeof(payload));
+    msg.header.checksum = calculateChecksum(msg.payload);
     
     std::cout << "📥 Solicitando blockchain desde altura " << fromHeight 
               << " (hasta " << (fromHeight + BLOCKS_PER_REQUEST) << ")" << std::endl;
@@ -1020,6 +1052,78 @@ void Node::loadKnownPeers(const std::string& filename) {
     while (std::getline(file, line)) {
         if (!line.empty()) {
             knownPeers.insert(line);
+        }
+    }
+}
+
+// ============================================================================
+// SEEN CACHE IMPLEMENTATION (Broadcast Loop Prevention)
+// ============================================================================
+
+// Define TTL constant
+const std::chrono::minutes Node::SEEN_CACHE_TTL{5};
+
+bool Node::hasSeenBlock(const std::string& blockHash) {
+    std::lock_guard<std::mutex> lock(seenCacheMutex);
+    return seenBlocks.find(blockHash) != seenBlocks.end();
+}
+
+void Node::markBlockAsSeen(const std::string& blockHash) {
+    std::lock_guard<std::mutex> lock(seenCacheMutex);
+    seenBlocks[blockHash] = std::chrono::steady_clock::now();
+    
+    // Prevent unbounded growth - remove oldest entry if limit exceeded
+    if (seenBlocks.size() > MAX_SEEN_CACHE_SIZE) {
+        auto oldest = seenBlocks.begin();
+        for (auto it = seenBlocks.begin(); it != seenBlocks.end(); ++it) {
+            if (it->second < oldest->second) {
+                oldest = it;
+            }
+        }
+        seenBlocks.erase(oldest);
+    }
+}
+
+bool Node::hasSeenTransaction(const std::string& txId) {
+    std::lock_guard<std::mutex> lock(seenCacheMutex);
+    return seenTransactions.find(txId) != seenTransactions.end();
+}
+
+void Node::markTransactionAsSeen(const std::string& txId) {
+    std::lock_guard<std::mutex> lock(seenCacheMutex);
+    seenTransactions[txId] = std::chrono::steady_clock::now();
+    
+    // Prevent unbounded growth - remove oldest entry if limit exceeded
+    if (seenTransactions.size() > MAX_SEEN_CACHE_SIZE) {
+        auto oldest = seenTransactions.begin();
+        for (auto it = seenTransactions.begin(); it != seenTransactions.end(); ++it) {
+            if (it->second < oldest->second) {
+                oldest = it;
+            }
+        }
+        seenTransactions.erase(oldest);
+    }
+}
+
+void Node::cleanupSeenCaches() {
+    std::lock_guard<std::mutex> lock(seenCacheMutex);
+    auto now = std::chrono::steady_clock::now();
+    
+    // Remove expired entries from seenBlocks
+    for (auto it = seenBlocks.begin(); it != seenBlocks.end();) {
+        if ((now - it->second) > SEEN_CACHE_TTL) {
+            it = seenBlocks.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // Remove expired entries from seenTransactions
+    for (auto it = seenTransactions.begin(); it != seenTransactions.end();) {
+        if ((now - it->second) > SEEN_CACHE_TTL) {
+            it = seenTransactions.erase(it);
+        } else {
+            ++it;
         }
     }
 }

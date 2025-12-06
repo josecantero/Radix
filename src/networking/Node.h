@@ -121,6 +121,25 @@ private:
     void requestBlockchain(std::shared_ptr<Peer> peer, uint64_t fromHeight);
     void processReceivedChain(const std::vector<Block>& blocks, uint64_t startHeight);
     bool needsSync() const;
+
+    // ------------------------------------------------------------------------
+    // SEEN CACHE (Broadcast Loop Prevention)
+    // ------------------------------------------------------------------------
+    std::map<std::string, std::chrono::steady_clock::time_point> seenBlocks;
+    std::map<std::string, std::chrono::steady_clock::time_point> seenTransactions;
+    mutable std::mutex seenCacheMutex;
+    
+    // Cache configuration
+    static const size_t MAX_SEEN_CACHE_SIZE = 1000;
+    static const std::chrono::minutes SEEN_CACHE_TTL;
+    
+    // Cache helper methods
+    bool hasSeenBlock(const std::string& blockHash);
+    void markBlockAsSeen(const std::string& blockHash);
+    bool hasSeenTransaction(const std::string& txId);
+    void markTransactionAsSeen(const std::string& txId);
+    void cleanupSeenCaches();
+
 };
 
 } // namespace Radix
