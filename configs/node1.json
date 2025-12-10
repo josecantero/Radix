@@ -1,0 +1,20 @@
+{
+    "network": {
+        "port": 8080,
+        "connect_peer": "",
+        "max_connections": 50
+    },
+    "mining": {
+        "enabled": true,
+        "miner_address": "radix_node1_miner",
+        "threads": 2
+    },
+    "rpc": {
+        "enabled": true,
+        "port": 8090
+    },
+    "blockchain": {
+        "data_dir": "/radix/data",
+        "difficulty": 1
+    }
+}

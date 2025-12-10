@@ -207,6 +207,20 @@ This will create the `radix_blockchain` executable in the `build/` directory.
 ./radix_blockchain --help
 ```
 
+### Build Docker Image (Alternative)
+
+If you prefer to use Docker:
+
+```bash
+docker build -t radix-blockchain .
+```
+
+Or use the pre-configured multi-node setup:
+
+```bash
+docker-compose up -d
+```
+
 ---
 
 ## 🚀 Usage
@@ -303,6 +317,62 @@ Start mining to earn block rewards:
 
 ---
 
+### Running with Docker
+
+#### Quick Start (Single Node)
+
+```bash
+# Run a node with RPC enabled
+docker run -d \
+  -p 8080:8080 \
+  -p 8090:8090 \
+  -v radix-data:/radix/data \
+  --name radix-node \
+  radix-blockchain --server --rpc
+```
+
+#### Multi-Node Network (docker-compose)
+
+Start 3 interconnected nodes for testing:
+
+```bash
+docker-compose up -d
+```
+
+This starts:
+- **node1**: Bootstrap miner (ports 8080/8090)
+- **node2**: Peer node (ports 8081/8091)
+- **node3**: Peer node (ports 8082/8092)
+
+**View logs:**
+```bash
+docker-compose logs -f node1
+```
+
+**Stop all nodes:**
+```bash
+docker-compose down
+```
+
+**Clean up (including data):**
+```bash
+docker-compose down -v
+```
+
+#### Custom Docker Configuration
+
+Mount a custom config file:
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/my-config.json:/radix/config.json:ro \
+  -v radix-data:/radix/data \
+  radix-blockchain --config config.json
+```
+
+---
+
 ### JSON-RPC API
 
 When RPC is enabled (`--rpc`), you can interact with the blockchain via HTTP:
@@ -381,17 +451,94 @@ curl -X POST http://localhost:8090/ \
 
 ## ⚙️ Configuration
 
-Currently, configuration is done via command-line arguments. Default values:
+### Configuration File Support
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--port` | 8080 | P2P listening port |
-| `--rpc` | 8090 | RPC API port (when enabled) |
-| Difficulty | 1 | PoW difficulty (leading zeros) |
-| Halving Interval | 3 blocks | Block reward reduction frequency |
-| Initial Reward | 50 RDX | Mining reward for genesis block |
+Radix supports JSON configuration files for easier management of complex setups:
 
-> 📝 **Future**: Configuration file support (config.json) is planned.
+```bash
+# Run with default config.json
+./radix_blockchain --config config.json
+
+# Run with custom config file
+./radix_blockchain --config my-node.json
+```
+
+#### Create a Config File
+
+Copy the example configuration:
+
+```bash
+cp config.example.json config.json
+```
+
+Edit `config.json` with your preferences:
+
+```json
+{
+  "network": {
+    "port": 8080,
+    "connect_peer": "",
+    "max_connections": 50
+  },
+  "mining": {
+    "enabled": true,
+    "miner_address": "radix_YourAddressHere",
+    "threads": 4
+  },
+  "rpc": {
+    "enabled": true,
+    "port": 8090
+  },
+  "blockchain": {
+    "data_dir": "./data",
+    "difficulty": 1
+  }
+}
+```
+
+#### Configuration Priority
+
+Settings are applied in this order (later overrides earlier):
+1. **Defaults** (hardcoded)
+2. **Config file** (`config.json` or `--config <file>`)
+3. **CLI arguments** (always win)
+
+**Example:**
+```bash
+# Config says port=8080, but CLI overrides to 9000
+./radix_blockchain --config config.json --port 9000
+```
+
+### Configuration Options
+
+| Section | Parameter | Type | Default | Description |
+|---------|-----------|------|---------|-------------|
+| `network` | `port` | int | 8080 | P2P listening port |
+| | `connect_peer` | string | "" | Initial peer (ip:port) |
+| | `max_connections` | int | 50 | Max peer connections |
+| `mining` | `enabled` | bool | false | Enable mining |
+| | `miner_address` | string | "radix_miner_default" | Mining rewards address |
+| | `threads` | int | 1 | Mining threads |
+| `rpc` | `enabled` | bool | false | Enable RPC server |
+| | `port` | int | 8090 | RPC listening port |
+| `blockchain` | `data_dir` | string | "./data" | Data directory |
+| | `difficulty` | int | 1 | PoW difficulty |
+
+### Command-Line Arguments
+
+All config file options can be overridden via CLI:
+
+| Argument | Description |
+|----------|-------------|
+| `--config <file>` | Load config from file |
+| `--server` | Start in server mode |
+| `--port <port>` | P2P port |
+| `--connect <ip:port>` | Connect to peer |
+| `--mine` | Enable mining |
+| `--miner-addr <addr>` | Mining address |
+| `--rpc` | Enable RPC |
+
+> 📝 **Note**: Block halving (3 blocks) and initial reward (50 RDX) are currently hardcoded.
 
 ---
 

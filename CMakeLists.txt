@@ -52,12 +52,14 @@ add_library(radix_core STATIC
     src/networking/Peer.cpp
     src/wallet.cpp
     src/api/RpcServer.cpp
+    src/config.cpp
 )
 
 # Link libraries to core
 target_link_libraries(radix_core
     ${RANDOMX_LIBRARY}
     ${OPENSSL_LIBRARIES}
+    nlohmann_json::nlohmann_json
 )
 
 # ============================================================================
@@ -73,9 +75,16 @@ target_link_libraries(radix_blockchain
 )
 
 # ============================================================================
-# GOOGLE TEST INTEGRATION
+# THIRD-PARTY LIBRARIES
 # ============================================================================
 include(FetchContent)
+
+# Download nlohmann/json (for config file parsing)
+FetchContent_Declare(
+  json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+)
+FetchContent_MakeAvailable(json)
 
 # Download Google Test
 FetchContent_Declare(

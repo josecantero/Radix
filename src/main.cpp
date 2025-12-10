@@ -11,6 +11,7 @@
 #include "money_util.h"
 #include "wallet.h"
 #include "api/RpcServer.h"
+#include "config.h"
 #include <openssl/provider.h>
 
 void initializeOpenSSL() {
@@ -24,6 +25,7 @@ void initializeOpenSSL() {
 void printUsage(const char* progName) {
     std::cout << "Uso: " << progName << " [opciones]\n"
               << "Opciones:\n"
+              << "  --config <file>   Cargar configuracion desde archivo JSON (default: config.json)\n"
               << "  --server          Iniciar en modo servidor (nodo)\n"
               << "  --port <port>     Puerto para escuchar (default: 8080)\n"
               << "  --connect <ip:port> Conectar a un peer inicial\n"
@@ -48,12 +50,28 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    bool serverMode = false;
-    int port = 8080;
-    std::string connectPeer = "";
-    bool mineMode = false; // Renamed from 'mine' to avoid conflict with new 'mine' variable in RPC context
-    std::string minerAddress = "radix_miner_default"; 
-    bool rpcEnabled = false;
+    // Load configuration
+    std::string configFile = "config.json";
+    
+    // Check for --config argument first
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+            configFile = argv[++i];
+            break;
+        }
+    }
+    
+    // Load config from file (or defaults if not found)
+    Radix::RadixConfig config;
+    try {
+        config = Radix::ConfigManager::loadFromFile(configFile);
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error loading config: " << e.what() << std::endl;
+        return 1;
+    }
+    
+    // Override with CLI arguments
+    config = Radix::ConfigManager::loadFromArgs(argc, argv, config);
     
     // CLI Commands
     bool newWallet = false;
@@ -65,21 +83,9 @@ int main(int argc, char* argv[]) {
     std::string sendRecipient = "";
     std::string sendWalletFile = "";
 
+    // Parse CLI-only commands (not in config file)
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--server") == 0) {
-            serverMode = true;
-        } else if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
-            port = std::stoi(argv[++i]);
-        } else if (strcmp(argv[i], "--connect") == 0 && i + 1 < argc) {
-            connectPeer = argv[++i];
-            serverMode = true; 
-        } else if (strcmp(argv[i], "--mine") == 0) {
-            mineMode = true;
-        } else if (strcmp(argv[i], "--miner-addr") == 0 && i + 1 < argc) {
-            minerAddress = argv[++i];
-        } else if (strcmp(argv[i], "--rpc") == 0) {
-            rpcEnabled = true;
-        } else if (strcmp(argv[i], "--new-wallet") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--new-wallet") == 0 && i + 1 < argc) {
             newWallet = true;
             walletFile = argv[++i];
         } else if (strcmp(argv[i], "--get-balance") == 0 && i + 1 < argc) {
@@ -163,7 +169,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (!serverMode && !mineMode && !rpcEnabled) {
+    if (!config.server_mode && !config.mining_enabled && !config.rpc_enabled) {
         std::cout << "Modo no especificado. Iniciando demo por defecto o usa --help.\n";
         printUsage(argv[0]);
         return 0;
@@ -174,29 +180,29 @@ int main(int argc, char* argv[]) {
     
     // Start RPC Server if requested
     std::unique_ptr<Radix::RpcServer> rpcServer;
-    if (rpcEnabled) {
+    if (config.rpc_enabled) {
         rpcServer = std::make_unique<Radix::RpcServer>(blockchain, node);
-        rpcServer->start(8090); // Default RPC port
-        std::cout << "✅ RPC Server started on port 8090" << std::endl;
+        rpcServer->start(config.rpc_port);
+        std::cout << "✅ RPC Server started on port " << config.rpc_port << std::endl;
     }
 
-    if (serverMode) {
+    if (config.server_mode) {
         std::cout << "Iniciando Radix Node..." << std::endl;
         
         // Start server in a separate thread so we can mine in main thread if needed
-        std::thread serverThread([&node, port]() {
-            node.startServer(port);
+        std::thread serverThread([&node, &config]() {
+            node.startServer(config.port);
         });
         serverThread.detach();
 
         // Peer Discovery
         node.discoverPeers();
 
-        if (!connectPeer.empty()) {
-            size_t colonPos = connectPeer.find(':');
+        if (!config.connect_peer.empty()) {
+            size_t colonPos = config.connect_peer.find(':');
             if (colonPos != std::string::npos) {
-                std::string ip = connectPeer.substr(0, colonPos);
-                int p = std::stoi(connectPeer.substr(colonPos + 1));
+                std::string ip = config.connect_peer.substr(0, colonPos);
+                int p = std::stoi(config.connect_peer.substr(colonPos + 1));
                 std::cout << "Conectando a peer " << ip << ":" << p << "..." << std::endl;
                 node.connectToPeer(ip, p);
             } else {
@@ -204,13 +210,13 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (mineMode) {
-            std::cout << "Mineria habilitada. Minando para: " << minerAddress << std::endl;
+        if (config.mining_enabled) {
+            std::cout << "Mineria habilitada. Minando para: " << config.miner_address << std::endl;
             std::cout << "Nodo corriendo. Presione Ctrl+C para salir." << std::endl;
             
             // Main mining loop
             while (g_running) {
-                blockchain.minePendingTransactions(minerAddress, g_running);
+                blockchain.minePendingTransactions(config.miner_address, g_running);
                 if (!g_running) break;
 
                 // Broadcast new block
@@ -230,7 +236,7 @@ int main(int argc, char* argv[]) {
         blockchain.saveChain("radix_blockchain.dat");
         node.stop();
         if (rpcServer) rpcServer->stop();
-    } else if (rpcEnabled) { // If only RPC is enabled, but not serverMode
+    } else if (config.rpc_enabled) { // If only RPC is enabled, but not serverMode
         std::cout << "RPC Server corriendo. Presione Ctrl+C para salir." << std::endl;
         while (g_running) {
             std::this_thread::sleep_for(std::chrono::seconds(1));

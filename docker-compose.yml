@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # Node 1: Bootstrap node with mining enabled
+  node1:
+    build: .
+    container_name: radix-node1
+    ports:
+      - "8080:8080"  # P2P
+      - "8090:8090"  # RPC
+    volumes:
+      - node1-data:/radix/data
+      - ./configs/node1.json:/radix/config.json:ro
+    command: ["radix_blockchain", "--config", "config.json"]
+    networks:
+      - radix-network
+    environment:
+      - NODE_NAME=node1
+
+  # Node 2: Peer connecting to node1
+  node2:
+    build: .
+    container_name: radix-node2
+    ports:
+      - "8081:8080"  # P2P
+      - "8091:8090"  # RPC
+    volumes:
+      - node2-data:/radix/data
+      - ./configs/node2.json:/radix/config.json:ro
+    command: ["radix_blockchain", "--config", "config.json"]
+    networks:
+      - radix-network
+    depends_on:
+      - node1
+    environment:
+      - NODE_NAME=node2
+
+  # Node 3: Another peer connecting to node1
+  node3:
+    build: .
+    container_name: radix-node3
+    ports:
+      - "8082:8080"  # P2P
+      - "8092:8090"  # RPC
+    volumes:
+      - node3-data:/radix/data
+      - ./configs/node3.json:/radix/config.json:ro
+    command: ["radix_blockchain", "--config", "config.json"]
+    networks:
+      - radix-network
+    depends_on:
+      - node1
+    environment:
+      - NODE_NAME=node3
+
+networks:
+  radix-network:
+    driver: bridge
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
