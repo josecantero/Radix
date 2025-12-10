@@ -685,6 +685,48 @@ For detailed task tracking, see [task.md](/home/kabudev/.gemini/antigravity/brai
 
 ---
 
+## 🔒 RPC Authentication
+
+The RPC server requires authentication by default to prevent unauthorized access.
+
+### Generating API Keys
+
+```bash
+./radix_blockchain --rpc-genkey "MyAppName" rpc_keys.json
+```
+This will output a new API key. Save it securely.
+
+### Using API Keys
+
+Include the API key in the `Authorization` header:
+
+```bash
+curl -X POST http://localhost:8090/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -d '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}'
+```
+
+### Rate Limiting
+
+- **Unauthenticated**: 100 requests/minute (per IP)
+- **Authenticated**: 1000 requests/minute (per token)
+- **Whitelisted IPs**: No rate limit
+
+### Managing Keys
+
+**List all keys:**
+```bash
+./radix_blockchain --rpc-listkeys rpc_keys.json
+```
+
+**Revoke a key:**
+```bash
+./radix_blockchain --rpc-revokekey <key> rpc_keys.json
+```
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Areas needing help:

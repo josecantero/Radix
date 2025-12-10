@@ -11,7 +11,14 @@
   },
   "rpc": {
     "enabled": false,
-    "port": 8090
+    "port": 8090,
+    "auth_required": true,
+    "keys_file": "rpc_keys.json",
+    "rate_limit": 100,
+    "rate_limit_authenticated": 1000,
+    "ip_whitelist": [
+      "127.0.0.1"
+    ]
   },
   "blockchain": {
     "data_dir": "./data",

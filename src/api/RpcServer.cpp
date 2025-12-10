@@ -1,9 +1,11 @@
 #include "RpcServer.h"
+#include "ApiKeyManager.h"
 #include "../transaction.h"
 #include <iostream>
 #include <sstream>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
 #include <algorithm>
@@ -17,8 +19,22 @@ RpcServer::~RpcServer() {
     stop();
 }
 
+void RpcServer::configure(bool authRequired, const std::string& keysFile, int rateLimit, int rateLimitAuth, const std::vector<std::string>& whitelist) {
+    this->authRequired = authRequired;
+    this->keysFile = keysFile;
+    this->rateLimit = rateLimit;
+    this->rateLimitAuth = rateLimitAuth;
+    this->ipWhitelist = whitelist;
+}
+
 void RpcServer::start(int port) {
     if (running) return;
+    
+    // Load API keys if auth is required
+    if (authRequired) {
+        loadApiKeys();
+    }
+    
     running = true;
     serverThread = std::thread(&RpcServer::acceptLoop, this, port);
 }
@@ -31,6 +47,23 @@ void RpcServer::stop() {
     }
     if (serverThread.joinable()) {
         serverThread.join();
+    }
+}
+
+void RpcServer::loadApiKeys() {
+    std::lock_guard<std::mutex> lock(apiKeysMutex);
+    std::unordered_map<std::string, ApiKeyInfo> keys; // Temporary map to match ApiKeyManager signature
+    
+    if (ApiKeyManager::loadKeys(keysFile, keys)) {
+        apiKeys.clear();
+        for (const auto& pair : keys) {
+            if (!pair.second.revoked) {
+                apiKeys[pair.first] = {pair.second.name, pair.second.revoked};
+            }
+        }
+        std::cout << "RPC: Loaded " << apiKeys.size() << " active API keys." << std::endl;
+    } else {
+        std::cout << "RPC: No API keys loaded or file not found." << std::endl;
     }
 }
 
@@ -75,25 +108,132 @@ void RpcServer::acceptLoop(int port) {
     }
 }
 
+std::string RpcServer::getClientIp(int clientSocket) {
+    struct sockaddr_in addr;
+    socklen_t addr_size = sizeof(struct sockaddr_in);
+    int res = getpeername(clientSocket, (struct sockaddr *)&addr, &addr_size);
+    if (res == 0) {
+        char clientip[20];
+        inet_ntop(AF_INET, &(addr.sin_addr), clientip, sizeof(clientip));
+        return std::string(clientip);
+    }
+    return "unknown";
+}
+
+bool RpcServer::isIpWhitelisted(const std::string& ip) {
+    for (const auto& allowedIp : ipWhitelist) {
+        if (ip == allowedIp) return true;
+    }
+    return false;
+}
+
+bool RpcServer::authenticate(const std::string& authHeader) {
+    if (!authRequired) return true;
+    
+    // Parse "Bearer <token>" format
+    if (authHeader.rfind("Bearer ", 0) != 0) return false;
+    std::string token = authHeader.substr(7);
+    
+    // Check if token exists in our cache
+    std::lock_guard<std::mutex> lock(apiKeysMutex);
+    auto it = apiKeys.find(token);
+    
+    if (it != apiKeys.end() && !it->second.revoked) {
+        // TODO: Could update last_used timestamp in file asynchronously
+        return true;
+    }
+    
+    return false;
+}
+
+bool RpcServer::checkRateLimit(const std::string& identifier, bool isAuthenticated) {
+    std::lock_guard<std::mutex> lock(rateLimitersMutex);
+    
+    // Get or create rate limiter for this identifier
+    if (rateLimiters.find(identifier) == rateLimiters.end()) {
+        int limit = isAuthenticated ? rateLimitAuth : rateLimit;
+        rateLimiters[identifier] = std::make_unique<RateLimiter>(limit);
+    }
+    
+    return rateLimiters[identifier]->allowRequest();
+}
+
 void RpcServer::handleConnection(int clientSocket) {
+    // 1. Get Client IP
+    std::string clientIp = getClientIp(clientSocket);
+    bool whitelisted = isIpWhitelisted(clientIp);
+    
     char buffer[4096] = {0};
     int valread = read(clientSocket, buffer, 4096);
     if (valread <= 0) {
-        std::cerr << "RPC: Read failed or empty" << std::endl;
         close(clientSocket);
         return;
     }
-    std::cout << "RPC: Received request: " << valread << " bytes" << std::endl;
-
+    
     std::string request(buffer, valread);
     
-    // Simple HTTP parsing
-    // Find body (after double newline)
+    // 2. Parse Headers for Auth
+    std::string authToken = "";
+    size_t authPos = request.find("Authorization: ");
+    if (authPos != std::string::npos) {
+        size_t eol = request.find("\r\n", authPos);
+        if (eol != std::string::npos) {
+            authToken = request.substr(authPos + 15, eol - (authPos + 15));
+        }
+    }
+    
+    // 3. Authentication Check
+    bool authenticated = false;
+    if (whitelisted) {
+        authenticated = true;
+    } else if (authRequired) {
+        if (authenticate(authToken)) {
+            authenticated = true;
+        } else {
+            // 401 Unauthorized
+            std::string body = createJsonError(0, -32001, "Unauthorized: Invalid or missing API key");
+            std::stringstream response;
+            response << "HTTP/1.1 401 Unauthorized\r\n"
+                     << "Content-Type: application/json\r\n"
+                     << "Content-Length: " << body.length() << "\r\n"
+                     << "Connection: close\r\n\r\n"
+                     << body;
+            std::string resp = response.str();
+            send(clientSocket, resp.c_str(), resp.length(), 0);
+            close(clientSocket);
+            return;
+        }
+    } else {
+        authenticated = true; // Auth disabled
+    }
+    
+    // 4. Rate Limit Check
+    // Identifier is auth token if present, else IP
+    std::string identifier = (authRequired && !whitelisted && !authToken.empty()) 
+                             ? authToken 
+                             : clientIp;
+                             
+    if (!whitelisted && !checkRateLimit(identifier, authRequired && authenticated)) {
+        // 429 Too Many Requests
+        std::string body = createJsonError(0, -32002, "Rate limit exceeded");
+        std::stringstream response;
+        response << "HTTP/1.1 429 Too Many Requests\r\n"
+                 << "Content-Type: application/json\r\n"
+                 << "Content-Length: " << body.length() << "\r\n"
+                 << "Connection: close\r\n\r\n"
+                 << body;
+        std::string resp = response.str();
+        send(clientSocket, resp.c_str(), resp.length(), 0);
+        close(clientSocket);
+        return;
+    }
+
+    // 5. Process Request (Existing logic)
     size_t bodyPos = request.find("\r\n\r\n");
     if (bodyPos == std::string::npos) {
         bodyPos = request.find("\n\n");
     }
-
+    
     std::string responseBody;
     if (bodyPos != std::string::npos) {
         std::string body = request.substr(bodyPos + (request.find("\r\n\r\n") != std::string::npos ? 4 : 2));
@@ -101,7 +241,8 @@ void RpcServer::handleConnection(int clientSocket) {
     } else {
         responseBody = createJsonError(0, -32700, "Parse error");
     }
-
+    
+    // 200 OK
     std::stringstream response;
     response << "HTTP/1.1 200 OK\r\n"
              << "Content-Type: application/json\r\n"
@@ -110,7 +251,6 @@ void RpcServer::handleConnection(int clientSocket) {
              << responseBody;
 
     std::string responseStr = response.str();
-    std::cout << "RPC: Sending response: " << responseStr.length() << " bytes" << std::endl;
     send(clientSocket, responseStr.c_str(), responseStr.length(), 0);
     close(clientSocket);
 }
@@ -235,7 +375,10 @@ std::vector<std::string> RpcServer::parseJsonArray(const std::string& json, cons
     while (std::getline(ss, segment, ',')) {
         // Trim whitespace
         segment.erase(0, segment.find_first_not_of(" \t\n\r"));
-        segment.erase(segment.find_last_not_of(" \t\n\r") + 1);
+        size_t last = segment.find_last_not_of(" \t\n\r");
+        if (last != std::string::npos) {
+            segment.erase(last + 1);
+        }
         result.push_back(segment);
     }
     return result;

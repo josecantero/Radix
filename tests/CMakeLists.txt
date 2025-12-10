@@ -7,6 +7,8 @@ add_executable(radix_tests
     test_transaction.cpp
     test_block.cpp
     test_blockchain.cpp
+    test_ratelimiter.cpp
+    ../src/api/RateLimiter.cpp
 )
 
 # Link against radix_core library and gtest

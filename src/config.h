@@ -2,6 +2,7 @@
 #define RADIX_CONFIG_H
 
 #include <string>
+#include <vector>
 
 namespace Radix {
 
@@ -25,6 +26,11 @@ struct RadixConfig {
     // RPC settings
     bool rpc_enabled = false;
     int rpc_port = 8090;
+    bool rpc_auth_required = true;
+    std::string rpc_keys_file = "rpc_keys.json";
+    int rpc_rate_limit = 100; // requests/minute per IP
+    int rpc_rate_limit_auth = 1000; // requests/minute per authenticated token
+    std::vector<std::string> rpc_ip_whitelist;
     
     // Blockchain settings
     std::string data_dir = "./data";

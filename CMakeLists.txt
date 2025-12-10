@@ -53,6 +53,8 @@ add_library(radix_core STATIC
     src/wallet.cpp
     src/api/RpcServer.cpp
     src/config.cpp
+    src/api/RateLimiter.cpp
+    src/api/ApiKeyManager.cpp
 )
 
 # Link libraries to core

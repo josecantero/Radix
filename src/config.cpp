@@ -47,6 +47,15 @@ RadixConfig ConfigManager::loadFromFile(const std::string& filepath) {
             auto rpc = j["rpc"];
             if (rpc.contains("enabled")) config.rpc_enabled = rpc["enabled"];
             if (rpc.contains("port")) config.rpc_port = rpc["port"];
+            if (rpc.contains("auth_required")) config.rpc_auth_required = rpc["auth_required"];
+            if (rpc.contains("keys_file")) config.rpc_keys_file = rpc["keys_file"];
+            if (rpc.contains("rate_limit")) config.rpc_rate_limit = rpc["rate_limit"];
+            if (rpc.contains("rate_limit_authenticated")) config.rpc_rate_limit_auth = rpc["rate_limit_authenticated"];
+            if (rpc.contains("ip_whitelist") && rpc["ip_whitelist"].is_array()) {
+                for (const auto& ip : rpc["ip_whitelist"]) {
+                    config.rpc_ip_whitelist.push_back(ip);
+                }
+            }
         }
         
         // Blockchain settings

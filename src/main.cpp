@@ -11,6 +11,7 @@
 #include "money_util.h"
 #include "wallet.h"
 #include "api/RpcServer.h"
+#include "api/ApiKeyManager.h"
 #include "config.h"
 #include <openssl/provider.h>
 
@@ -32,6 +33,9 @@ void printUsage(const char* progName) {
               << "  --mine            Habilitar mineria automatica\n"
               << "  --miner-addr <addr> Direccion de recompensa para mineria\n"
               << "  --rpc             Habilitar servidor RPC (default: 8090)\n"
+              << "  --rpc-genkey <name> <file> Generar nueva API Key\n"
+              << "  --rpc-listkeys <file>      Listar API Keys existentes\n"
+              << "  --rpc-revokekey <key> <file> Revocar una API Key\n"
               << "  --help            Mostrar esta ayuda\n";
 }
 
@@ -49,6 +53,33 @@ int main(int argc, char* argv[]) {
     initializeOpenSSL();
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
+
+    // 0. Handle API Key Management Commands
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--rpc-genkey" && i + 2 < argc) {
+            std::string name = argv[i+1];
+            std::string file = argv[i+2];
+            std::string key = Radix::ApiKeyManager::createKey(name, file);
+            std::cout << "Generated new API Key for '" << name << "': " << key << std::endl;
+            std::cout << "Saved to " << file << std::endl;
+            return 0;
+        }
+        else if (std::string(argv[i]) == "--rpc-listkeys" && i + 1 < argc) {
+            std::string file = argv[i+1];
+            Radix::ApiKeyManager::listKeys(file);
+            return 0;
+        }
+        else if (std::string(argv[i]) == "--rpc-revokekey" && i + 2 < argc) {
+            std::string key = argv[i+1];
+            std::string file = argv[i+2];
+            if (Radix::ApiKeyManager::revokeKey(key, file)) {
+                std::cout << "Key revoked successfully." << std::endl;
+            } else {
+                std::cout << "Key not found or could not be revoked." << std::endl;
+            }
+            return 0;
+        }
+    }
 
     // Load configuration
     std::string configFile = "config.json";
@@ -182,6 +213,13 @@ int main(int argc, char* argv[]) {
     std::unique_ptr<Radix::RpcServer> rpcServer;
     if (config.rpc_enabled) {
         rpcServer = std::make_unique<Radix::RpcServer>(blockchain, node);
+        rpcServer->configure(
+            config.rpc_auth_required,
+            config.rpc_keys_file,
+            config.rpc_rate_limit,
+            config.rpc_rate_limit_auth,
+            config.rpc_ip_whitelist
+        );
         rpcServer->start(config.rpc_port);
         std::cout << "✅ RPC Server started on port " << config.rpc_port << std::endl;
     }
