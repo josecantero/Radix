@@ -709,7 +709,7 @@ curl -X POST http://localhost:8090/ \
 
 ### Rate Limiting
 
-- **Unauthenticated**: 100 requests/minute (per IP)
+- **Unauthenticated**: 100 requests/minute (per IP) - *Only if auth is disabled*
 - **Authenticated**: 1000 requests/minute (per token)
 - **Whitelisted IPs**: No rate limit
 
