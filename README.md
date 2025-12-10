@@ -91,6 +91,8 @@ radix_blockchain/
 ├── src/
 │   ├── api/
 │   │   ├── RpcServer.cpp/h        # JSON-RPC HTTP server
+│   │   ├── ApiKeyManager.cpp/h    # API Key management
+│   │   ├── RateLimiter.cpp/h      # Request rate limiting
 │   ├── networking/
 │   │   ├── Node.cpp/h             # P2P node implementation
 │   │   ├── Peer.cpp/h             # Peer connection handling
@@ -98,18 +100,22 @@ radix_blockchain/
 │   ├── blockchain.cpp/h           # Blockchain core logic
 │   ├── block.cpp/h                # Block structure and validation
 │   ├── transaction.cpp/h          # Transaction handling and UTXO
-│   ├── crypto.cpp/h               # ECDSA, SHA-256, Base58
+│   ├── crypto.cpp/h               # ECDSA, SHA-256
 │   ├── wallet.cpp/h               # Wallet key management
+│   ├── config.cpp/h               # Component configuration
 │   ├── randomx_util.cpp/h         # RandomX PoW wrapper
 │   ├── merkle_tree.cpp/h          # Merkle tree implementation
 │   ├── money_util.cpp/h           # Currency formatting (RDX)
 │   ├── persistence_util.cpp/h     # Binary serialization
 │   └── main.cpp                   # CLI entry point
+├── configs/                       # Example node configurations
+├── scripts/                       # Helper scripts (e.g., Verify RPC)
 ├── tests/
 │   ├── test_crypto.cpp            # Cryptography unit tests
 │   ├── test_transaction.cpp       # Transaction unit tests
 │   ├── test_block.cpp             # Block unit tests
 │   ├── test_blockchain.cpp        # Blockchain unit tests
+│   ├── test_ratelimiter.cpp       # Rate limiter tests
 │   └── CMakeLists.txt             # Test build configuration
 ├── CMakeLists.txt                 # Build configuration
 └── README.md                      # This file
@@ -661,12 +667,12 @@ cd build
 - [x] Basic RPC API
 - [x] Unit tests (Google Test) - 36 tests, 100% passing
 - [ ] Comprehensive documentation
-- [ ] Docker containerization
-- [ ] Configuration file support
+- [x] Docker containerization
+- [x] Configuration file support
 
 ### Phase 2: Production Readiness
-- [ ] RPC authentication (API keys)
-- [ ] Rate limiting & DoS protection
+- [x] RPC authentication (API keys)
+- [x] Rate limiting & DoS protection
 - [ ] Structured logging (spdlog)
 - [ ] Dynamic difficulty adjustment
 - [ ] LevelDB storage backend
@@ -681,7 +687,7 @@ cd build
 - [ ] Smart contracts (basic scripting)
 - [ ] Metrics dashboard (Prometheus/Grafana)
 
-For detailed task tracking, see [task.md](/home/kabudev/.gemini/antigravity/brain/8e57e8d9-2eaf-42ba-bac9-dc4ef1922ab2/task.md).
+
 
 ---
 
