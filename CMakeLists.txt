@@ -55,6 +55,7 @@ add_library(radix_core STATIC
     src/config.cpp
     src/api/RateLimiter.cpp
     src/api/ApiKeyManager.cpp
+    src/logger.cpp
 )
 
 # Link libraries to core
@@ -62,6 +63,7 @@ target_link_libraries(radix_core
     ${RANDOMX_LIBRARY}
     ${OPENSSL_LIBRARIES}
     nlohmann_json::nlohmann_json
+    spdlog::spdlog
 )
 
 # ============================================================================
@@ -87,6 +89,13 @@ FetchContent_Declare(
   URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
 )
 FetchContent_MakeAvailable(json)
+
+# Download spdlog (for structured logging)
+FetchContent_Declare(
+  spdlog
+  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.13.0.tar.gz
+)
+FetchContent_MakeAvailable(spdlog)
 
 # Download Google Test
 FetchContent_Declare(

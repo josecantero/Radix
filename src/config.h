@@ -36,6 +36,10 @@ struct RadixConfig {
     std::string data_dir = "./data";
     int difficulty = 1;
     
+    // Logging settings
+    std::string log_dir = "./logs";
+    std::string log_level = "info";  // trace, debug, info, warn, error, critical
+    
     // Server mode
     bool server_mode = false;
 };

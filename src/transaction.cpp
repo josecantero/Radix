@@ -6,6 +6,7 @@
 #include "persistence_util.h" // Para serialización binaria
 
 #include <iostream>
+#include "logger.h"
 #include <sstream>
 #include <stdexcept>
 #include <algorithm> // Para std::all_of
@@ -133,14 +134,14 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
 bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSet) const {
     // 1. Validación básica de la transacción
     if (id != calculateHash()) {
-        std::cerr << "Error de validacion: ID de transaccion no coincide con el hash calculado." << std::endl;
+        LOG_ERROR(Logger::blockchain(), "Error de validacion: ID de transaccion no coincide con el hash calculado");
         return false;
     }
 
     // 2. Transacciones Coinbase
     if (isCoinbase) {
         if (!inputs.empty() || outputs.empty()) {
-            std::cerr << "Error de validacion: Transaccion Coinbase invalida (inputs=" << inputs.size() << ", outputs=" << outputs.size() << ")." << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error de validacion: Transaccion Coinbase invalida (inputs={}, outputs={})", inputs.size(), outputs.size());
             return false;
         }
         return true;
@@ -148,7 +149,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
 
     // 3. Transacciones normales: deben tener inputs y outputs.
     if (inputs.empty() || outputs.empty()) {
-        std::cerr << "Error de validacion: Transaccion normal invalida (inputs/outputs vacios)." << std::endl;
+        LOG_ERROR(Logger::blockchain(), "Error de validacion: Transaccion normal invalida (inputs/outputs vacios)");
         return false;
     }
 
@@ -163,7 +164,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
 
         // Doble gasto local
         if (spentUtxos.count(utxoKey)) {
-             std::cerr << "Error de validacion: Doble gasto detectado dentro de la misma transaccion (" << utxoKey << ")." << std::endl;
+             LOG_ERROR(Logger::blockchain(), "Error de validacion: Doble gasto detectado dentro de la misma transaccion ({})", utxoKey);
              return false;
         }
         spentUtxos[utxoKey] = true;
@@ -171,7 +172,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
         // UTXO existente
         auto it = utxoSet.find(utxoKey);
         if (it == utxoSet.end()) {
-            std::cerr << "Error de validacion: La UTXO referenciada (" << utxoKey << ") no existe o ya ha sido gastada." << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error de validacion: La UTXO referenciada ({}) no existe o ya ha sido gastada", utxoKey);
             return false;
         }
         const TransactionOutput& utxo = it->second;
@@ -180,7 +181,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
         if (expectedAddress.empty()) {
             expectedAddress = utxo.recipientAddress;
         } else if (expectedAddress != utxo.recipientAddress) {
-            std::cerr << "Error de validacion: Multiples direcciones encontradas en inputs con una sola firma." << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error de validacion: Multiples direcciones encontradas en inputs con una sola firma");
             return false;
         }
 
@@ -189,12 +190,12 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
         Radix::RandomXHash messageHash = Radix::SHA256(rawHash);
         
         if (input.pubKey.empty() || input.signature.empty() || utxo.recipientAddress != KeyPair::deriveAddress(input.pubKey)) {
-            std::cerr << "Error de validacion: Clave publica o firma faltante/invalida para la UTXO: " << utxoKey << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error de validacion: Clave publica o firma faltante/invalida para la UTXO: {}", utxoKey);
             return false;
         }
 
         if (!KeyPair::verify(input.pubKey, messageHash, input.signature)) {
-            std::cerr << "Error de validacion: Firma invalida en el input para la UTXO: " << utxoKey << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error de validacion: Firma invalida en el input para la UTXO: {}", utxoKey);
             return false;
         }
 
@@ -204,7 +205,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
     // D. Montos de salida y tarifas
     for (const auto& output : outputs) {
         if (output.amount == 0) {
-            std::cerr << "Error de validacion: Monto de salida de cero rads no permitido." << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error de validacion: Monto de salida de cero rads no permitido");
             return false;
         }
         totalOutputAmount += output.amount;
@@ -212,13 +213,12 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
 
     // La salida total no puede exceder la entrada total (la diferencia es la tarifa de transacción)
     if (totalOutputAmount > totalInputAmount) {
-        std::cerr << "Error de validacion: Salida total (" << Radix::formatRadsToRDX(totalOutputAmount) << 
-                     ") excede la entrada total (" << Radix::formatRadsToRDX(totalInputAmount) << 
-                     "). Sobregiro detectado." << std::endl;
+        LOG_ERROR(Logger::blockchain(), "Error de validacion: Salida total ({}) excede la entrada total ({}). Sobregiro detectado", 
+                     Radix::formatRadsToRDX(totalOutputAmount), Radix::formatRadsToRDX(totalInputAmount));
         return false;
     }
     
-    std::cout << "DEBUG (isValid): Transaccion valida." << std::endl;
+    LOG_DEBUG(Logger::blockchain(), "DEBUG (isValid): Transaccion valida");
     return true;
 }
 

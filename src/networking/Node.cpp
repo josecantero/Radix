@@ -1,4 +1,5 @@
 #include "Node.h"
+#include "../logger.h"
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -24,13 +25,13 @@ void Node::startServer(int port) {
     this->myPort = port;
     serverSocketFd = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocketFd == -1) {
-        std::cerr << "Error al crear el socket del servidor." << std::endl;
+        LOG_ERROR(Logger::network(), "Error al crear el socket del servidor");
         return;
     }
 
     int opt = 1;
     if (setsockopt(serverSocketFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
-        std::cerr << "Error en setsockopt" << std::endl;
+        LOG_ERROR(Logger::network(), "Error en setsockopt");
         close(serverSocketFd);
         return;
     }
@@ -41,19 +42,19 @@ void Node::startServer(int port) {
     address.sin_port = htons(port);
 
     if (bind(serverSocketFd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        std::cerr << "Error en bind al puerto " << port << std::endl;
+        LOG_ERROR(Logger::network(), "Error en bind al puerto {}", port);
         close(serverSocketFd);
         return;
     }
 
     if (listen(serverSocketFd, 10) < 0) {
-        std::cerr << "Error en listen" << std::endl;
+        LOG_ERROR(Logger::network(), "Error en listen");
         close(serverSocketFd);
         return;
     }
 
     running = true;
-    std::cout << "Nodo escuchando en el puerto " << port << std::endl;
+    LOG_INFO(Logger::network(), "Nodo escuchando en el puerto {}", port);
 
     serverThread = std::thread(&Node::acceptLoop, this, serverSocketFd);
     witnessingMonitorThread = std::thread(&Node::monitorWitnessingTimeouts, this);
@@ -87,7 +88,7 @@ void Node::stop() {
 bool Node::connectToPeer(const std::string& ip, int port) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
-        std::cerr << "Error creando socket cliente" << std::endl;
+        LOG_ERROR(Logger::network(), "Error creando socket cliente");
         return false;
     }
 
@@ -96,18 +97,18 @@ bool Node::connectToPeer(const std::string& ip, int port) {
     serv_addr.sin_port = htons(port);
 
     if (inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr) <= 0) {
-        std::cerr << "Direccion invalida / no soportada: " << ip << std::endl;
+        LOG_ERROR(Logger::network(), "Direccion invalida / no soportada: {}", ip);
         close(sock);
         return false;
     }
 
     if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        std::cerr << "Conexion fallida a " << ip << ":" << port << " Error: " << strerror(errno) << std::endl;
+        LOG_ERROR(Logger::network(), "Conexion fallida a {}:{} - Error: {}", ip, port, strerror(errno));
         close(sock);
         return false;
     }
 
-    std::cout << "Conectado exitosamente a " << ip << ":" << port << std::endl;
+    LOG_INFO(Logger::network(), "Conectado exitosamente a {}:{}", ip, port);
 
     auto peer = std::make_shared<Peer>(sock, serv_addr);
     {
@@ -162,11 +163,11 @@ void Node::acceptLoop(int serverSocketFd) {
         int new_socket = accept(serverSocketFd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
         
         if (new_socket < 0) {
-            if (running) std::cerr << "Error en accept" << std::endl;
+            if (running) LOG_ERROR(Logger::network(), "Error en accept");
             continue;
         }
 
-        std::cout << "Nueva conexion entrante aceptada." << std::endl;
+        LOG_INFO(Logger::network(), "Nueva conexion entrante aceptada");
         
         auto peer = std::make_shared<Peer>(new_socket, address);
         {
@@ -190,7 +191,7 @@ void Node::handlePeer(std::shared_ptr<Peer> peer) {
         }
     }
     
-    std::cout << "Peer desconectado: " << peer->getIpAddress() << std::endl;
+    LOG_INFO(Logger::network(), "Peer desconectado: {}", peer->getIpAddress());
     peer->closeConnection();
 
     // Remove peer from list
@@ -211,28 +212,27 @@ void Node::broadcastTransaction(const Transaction& tx) {
     msg.header.payloadSize = msg.payload.size();
     msg.header.checksum = calculateChecksum(msg.payload);
 
-    std::cout << "DEBUG: Broadcasting transaction to " << peers.size() << " peers." << std::endl;
+    LOG_DEBUG(Logger::network(), "Broadcasting transaction to {} peers", peers.size());
     broadcast(msg);
 }
 
 void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
     if (msg.header.magic != RADIX_NETWORK_MAGIC) {
-        std::cerr << "Mensaje con Magic invalido de " << peer->getIpAddress() << std::endl;
+        LOG_ERROR(Logger::network(), "Mensaje con Magic invalido de {}", peer->getIpAddress());
         peer->closeConnection();
         return;
     }
 
     // Validate checksum for message integrity
     if (!validateChecksum(msg)) {
-        std::cerr << "❌ Checksum inválido de " << peer->getIpAddress() << std::endl;
-        std::cerr << "   Posible corrupción de datos o ataque MITM" << std::endl;
+        LOG_ERROR(Logger::network(), "❌ Checksum inválido de {} - Posible corrupción de datos o ataque MITM", peer->getIpAddress());
         peer->closeConnection();
         return;
     }
 
     switch (msg.header.type) {
         case MessageType::HANDSHAKE: {
-            std::cout << "Recibido HANDSHAKE de " << peer->getIpAddress() << std::endl;
+            LOG_INFO(Logger::network(), "Recibido HANDSHAKE de {}", peer->getIpAddress());
             // Respond with ACK
             Message ackMsg;
             ackMsg.header.magic = RADIX_NETWORK_MAGIC;
@@ -254,7 +254,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             break;
         }
         case MessageType::HANDSHAKE_ACK: {
-            std::cout << "Recibido HANDSHAKE_ACK de " << peer->getIpAddress() << std::endl;
+            LOG_INFO(Logger::network(), "Recibido HANDSHAKE_ACK de {}", peer->getIpAddress());
             peer->setHandshaked(true);
 
             // Send GET_PEERS to discover more nodes
@@ -270,11 +270,11 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             break;
         }
         case MessageType::NEW_BLOCK: {
-            std::cout << "Recibido NUEVO BLOQUE de " << peer->getIpAddress() << std::endl;
+            LOG_INFO(Logger::network(), "Recibido NUEVO BLOQUE de {}", peer->getIpAddress());
             
             // Check if peer is banned
             if (isPeerBanned(peer->getIpAddress())) {
-                std::cout << "❌ Rechazando bloque de peer baneado: " << peer->getIpAddress() << std::endl;
+                LOG_INFO(Logger::network(), "❌ Rechazando bloque de peer baneado: {}", peer->getIpAddress());
                 peer->closeConnection();
                 break;
             }
@@ -289,7 +289,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
                 // Check if we've already seen this block (prevent broadcast loops)
                 if (hasSeenBlock(newBlock.hash)) {
-                    std::cout << "⏭️  Bloque ya visto - ignorando rebroadcast" << std::endl;
+                    LOG_INFO(Logger::network(), "⏭️  Bloque ya visto - ignorando rebroadcast");
                     break;
                 }
                 
@@ -299,25 +299,25 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 Blockchain::BlockStatus status = blockchain.submitBlock(newBlock);
 
                 if (status == Blockchain::BlockStatus::ACCEPTED) {
-                    std::cout << "✅ Bloque ACEPTADO. Altura: " << blockchain.getChainSize() - 1 << std::endl;
+                    LOG_INFO(Logger::network(), "{}", blockchain.getChainSize() - 1);
                     // Re-broadcast to other peers (now protected against loops)
                     broadcastBlock(newBlock);  
                     
                 } else if (status == Blockchain::BlockStatus::REQUIRES_WITNESSING) {
                     std::cout << "\n⚠️⚠️⚠️  REORGANIZACIÓN PROFUNDA DETECTADA  ⚠️⚠️⚠️\n";
-                    std::cout << "Iniciando PROTOCOLO DE TESTIGOS (Peer Witnessing)\n" << std::endl;
+                    LOG_INFO(Logger::network(), "Iniciando PROTOCOLO DE TESTIGOS (Peer Witnessing)\n");
                     
                     // Select random witnesses (1-5 nodes)
                     auto witnesses = selectRandomWitnesses(5);
                     
                     if (witnesses.empty()) {
-                        std::cout << "❌ Sin peers disponibles para witnessing - RECHAZANDO automáticamente" << std::endl;
-                        std::cout << "BANEANDO nodo: " << peer->getIpAddress() << "\n" << std::endl;
+                        LOG_INFO(Logger::network(), "❌ Sin peers disponibles para witnessing - RECHAZANDO automáticamente");
+                        LOG_WARN(Logger::network(), "BANEANDO nodo: {}", peer->getIpAddress());
                         banPeer(peer->getIpAddress(), "Reorganización profunda sin testigos disponibles para verificar");
                         break;
                     }
                     
-                    std::cout << "📋 Consultando a " << witnesses.size() << " testigo(s) aleatorio(s)..." << std::endl;
+                    LOG_INFO(Logger::network(), "📋 Consultando a {} testigo(s) aleatorio(s)...", witnesses.size());
                     
                     // Create witness query
                     WitnessQuery query;
@@ -350,38 +350,38 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                         queryMsg.payload.resize(sizeof(queryPayload));
                         std::memcpy(queryMsg.payload.data(), &queryPayload, sizeof(queryPayload));
                         
-                        std::cout << "  → Enviando query a testigo: " << witness->getIpAddress() << std::endl;
+                        LOG_INFO(Logger::network(), "  → Enviando query a testigo: {}", witness->getIpAddress());
                         witness->sendMessage(queryMsg);
                     }
                     
-                    std::cout << "⏳ Esperando respuestas (timeout: 10s)...\n" << std::endl;
+                    LOG_INFO(Logger::network(), "⏳ Esperando respuestas (timeout: 10s)...\n");
                     
                 } else if (status == Blockchain::BlockStatus::REJECTED_INVALID) {
                      // Check if we're missing the parent block
                     int parentHeight = blockchain.getBlockHeight(newBlock.prevHash);
                     if (parentHeight == -1 && blockchain.getChainSize() > 0) {
                         // We don't have the parent - need to sync
-                        std::cout << "⚠️  Nos falta el bloque padre. Iniciando sincronización..." << std::endl;
+                        LOG_INFO(Logger::network(), "⚠️  Nos falta el bloque padre. Iniciando sincronización...");
                         
                         uint64_t ourHeight = blockchain.getChainSize() - 1;
                         targetChainHeight = ourHeight + 10; // Estimate
                         
                         requestBlockchain(peer, ourHeight + 1);
                     } else {
-                        std::cout << "❌ Bloque rechazado. Estado: " << (int)status << std::endl;
+                        LOG_INFO(Logger::network(), "{}", (int)status);
                     }
                 } else {
-                    std::cout << "❌ Bloque rechazado. Estado: " << (int)status << std::endl;
+                    LOG_INFO(Logger::network(), "{}", (int)status);
                 }
 
             } catch (const std::exception& e) {
-                std::cerr << "❌ Error procesando bloque: " << e.what() << std::endl;
+                LOG_ERROR(Logger::network(), "❌ Error procesando bloque: {}", e.what());
             }
             break;
         }
         
         case MessageType::GET_PEERS: {
-            std::cout << "📡 Received GET_PEERS request." << std::endl;
+            LOG_INFO(Logger::network(), "📡 Received GET_PEERS request.");
             // Send PEER_LIST
             Message response;
             response.header.magic = RADIX_NETWORK_MAGIC;
@@ -408,7 +408,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
         case MessageType::PEER_LIST: {
             std::string peerListStr(msg.payload.begin(), msg.payload.end());
-            std::cout << "📡 Received PEER_LIST: " << peerListStr << std::endl;
+            LOG_INFO(Logger::network(), "📡 Received PEER_LIST: {}", peerListStr);
             
             std::stringstream ss(peerListStr);
             std::string segment;
@@ -423,7 +423,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
         }
 
         case MessageType::NEW_TRANSACTION: {
-            std::cout << "💸 Recibida NUEVA TRANSACCION de " << peer->getIpAddress() << std::endl;
+            LOG_INFO(Logger::network(), "💸 Recibida NUEVA TRANSACCION de {}", peer->getIpAddress());
             
             if (msg.payload.empty()) break;
 
@@ -432,11 +432,11 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 Transaction tx;
                 tx.deserialize(ss);
                 
-                std::cout << "   ID: " << tx.id << std::endl;
+                LOG_INFO(Logger::network(), "{}", tx.id);
 
                 // Check if we've already seen this transaction (prevent broadcast loops)
                 if (hasSeenTransaction(tx.id)) {
-                    std::cout << "⏭️  Transacción ya vista - ignorando rebroadcast" << std::endl;
+                    LOG_INFO(Logger::network(), "⏭️  Transacción ya vista - ignorando rebroadcast");
                     break;
                 }
                 
@@ -445,15 +445,15 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
                 // Try to add to our mempool
                 if (blockchain.addTransaction(tx)) {
-                    std::cout << "✅ Transaccion valida y agregada al mempool." << std::endl;
+                    LOG_INFO(Logger::network(), "✅ Transaccion valida y agregada al mempool.");
                     // Re-broadcast to others (Gossip) - now protected against loops
                     broadcastTransaction(tx);
                 } else {
-                    std::cout << "⚠️ Transaccion rechazada o ya conocida." << std::endl;
+                    LOG_INFO(Logger::network(), "⚠️ Transaccion rechazada o ya conocida.");
                 }
 
             } catch (const std::exception& e) {
-                std::cerr << "❌ Error procesando transaccion: " << e.what() << std::endl;
+                LOG_ERROR(Logger::network(), "❌ Error procesando transaccion: {}", e.what());
             }
             break;
         }
@@ -471,7 +471,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             auto blocks = blockchain.getBlocksFromHeight(request.startHeight, request.maxBlocks);
             
             if (blocks.empty()) {
-                std::cout << "   No hay bloques para enviar" << std::endl;
+                LOG_INFO(Logger::network(), "   No hay bloques para enviar");
                 break;
             }
             
@@ -497,14 +497,14 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             response.header.checksum = calculateChecksum(response.payload);
             response.payload.assign(serialized.begin(), serialized.end());
             
-            std::cout << "   Enviando " << blockCount << " bloque(s)" << std::endl;
+            LOG_INFO(Logger::network(), "   Enviando {} bloque(s)", blockCount);
             peer->sendMessage(response);
             break;
         }
         case MessageType::SEND_CHAIN: {
             if (msg.payload.empty()) break;
             
-            std::cout << "📥 Recibiendo cadena de " << peer->getIpAddress() << std::endl;
+            LOG_INFO(Logger::network(), "📥 Recibiendo cadena de {}", peer->getIpAddress());
             
             try {
                 std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
@@ -513,7 +513,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 uint64_t blockCount = 0;
                 ss.read(reinterpret_cast<char*>(&blockCount), sizeof(blockCount));
                 
-                std::cout << "   Recibidos " << blockCount << " bloque(s)" << std::endl;
+                LOG_INFO(Logger::network(), "   Recibidos {} bloque(s)", blockCount);
                 
                 // Read blocks
                 std::vector<Block> receivedBlocks;
@@ -529,7 +529,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 processReceivedChain(receivedBlocks, 0);
                 
             } catch (const std::exception& e) {
-                std::cerr << "❌ Error procesando cadena recibida: " << e.what() << std::endl;
+                LOG_ERROR(Logger::network(), "❌ Error procesando cadena recibida: {}", e.what());
                 std::lock_guard<std::mutex> lock(syncStateMutex);
                 syncState = SyncState::NEEDS_SYNC;
             }
@@ -539,7 +539,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
         case MessageType::WITNESS_QUERY: {
             if (msg.payload.size() != sizeof(WitnessQueryPayload)) {
-                std::cerr << "Payload de WITNESS_QUERY invalido." << std::endl;
+                LOG_ERROR(Logger::network(), "Payload de WITNESS_QUERY invalido.");
                 break;
             }
             WitnessQueryPayload query;
@@ -550,7 +550,8 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             query.blockHash[64] = '\0'; 
             bool agrees = (myHash == std::string(query.blockHash));
             
-            std::cout << "TESTIGO: Solicitud para altura " << query.blockHeight << ". Mi hash: " << (myHash.empty() ? "Desconocido" : myHash) << ". Veredicto: " << (agrees ? "VALIDO" : "INVALIDO") << std::endl;
+            LOG_INFO(Logger::network(), "TESTIGO: Solicitud para altura {}. Mi hash: {}. Veredicto: {}", 
+                     query.blockHeight, (myHash.empty() ? "Desconocido" : myHash), (agrees ? "VALIDO" : "INVALIDO"));
 
             WitnessResponsePayload resp;
             resp.agrees = agrees;
@@ -597,7 +598,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                         
                         // If all witnesses have responded, process immediately (no need to wait for timeout)
                         if (query.responses.size() >= static_cast<size_t>(query.expectedResponses)) {
-                            std::cout << "✅ Todas las respuestas recibidas. Procesando resultado..." << std::endl;
+                            LOG_INFO(Logger::network(), "✅ Todas las respuestas recibidas. Procesando resultado...");
                             processWitnessQueryResult(blockHash);
                             query.completed = true;
                         }
@@ -608,7 +609,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             break;
         }
         default: {
-            std::cout << "Mensaje desconocido recibido: " << (int)msg.header.type << std::endl;
+            LOG_INFO(Logger::network(), "{}", (int)msg.header.type);
             break;
         }
     }
@@ -652,7 +653,7 @@ void Node::monitorWitnessingTimeouts() {
         
         for (auto& [blockHash, query] : activeWitnessQueries) {
             if (!query.completed && (now - query.startTime) > TIMEOUT_DURATION) {
-                std::cout << "⏱️ TESTIGO: Timeout para query de bloque " << blockHash.substr(0, 16) << "..." << std::endl;
+                LOG_WARN(Logger::network(), "⏱️ TESTIGO: Timeout para query de bloque {}...", blockHash.substr(0, 16));
                 processWitnessQueryResult(blockHash);
                 query.completed = true;
             }
@@ -705,7 +706,7 @@ void Node::banPeer(const std::string& ip, const std::string& reason) {
         bannedPeers.push_back(ban);
     }
     
-    std::cout << "🚫 PEER BANEADO: " << ip << "\n   Razón: " << reason << std::endl;
+    LOG_WARN(Logger::network(), "🚫 PEER BANEADO: {}\n   Razón: {}", ip, reason);
     
     // Disconnect the peer if currently connected
     {
@@ -747,7 +748,7 @@ void Node::processWitnessQueryResult(const std::string& blockHash) {
     
     if (total == 0) {
         std::cout << "❌ DECISIÓN: Sin respuestas - RECHAZANDO por seguridad\n";
-        std::cout << "Nodo sospechoso: " << query.queryingPeerIp << std::endl;
+        LOG_INFO(Logger::network(), "{}", query.queryingPeerIp);
         std::cout << "═══════════════════════════════════════════════════\n\n";
         banPeer(query.queryingPeerIp, "Reorganización profunda sin testigos disponibles para verificar");
         return;
@@ -764,7 +765,7 @@ void Node::processWitnessQueryResult(const std::string& blockHash) {
             blockchain.applyReorganization(*pendingWitnessBlocks[blockHash]);
             pendingWitnessBlocks.erase(blockHash);
         } else {
-            std::cerr << "❌ Error: Bloque pendiente no encontrado para reorg: " << blockHash << std::endl;
+            LOG_ERROR(Logger::network(), "❌ Error: Bloque pendiente no encontrado para reorg: {}", blockHash);
         }
     } else if (disagrees > agrees) {
         std::cout << "❌ DECISIÓN: MAYORÍA RECHAZA (" << disagrees << "/" << total << ")\n";
@@ -784,7 +785,7 @@ void Node::processWitnessQueryResult(const std::string& blockHash) {
 void Node::loadBannedPeers(const std::string& filename) {
     std::ifstream fs(filename, std::ios::binary);
     if (!fs.is_open()) {
-        std::cout << "No se encontró archivo de peers baneados (primera ejecución)" << std::endl;
+        LOG_INFO(Logger::network(), "No se encontró archivo de peers baneados (primera ejecución)");
         return;
     }
     
@@ -818,9 +819,9 @@ void Node::loadBannedPeers(const std::string& filename) {
             bannedPeers.push_back(ban);
         }
         
-        std::cout << "✅ Cargados " << bannedPeers.size() << " peers baneados desde disco" << std::endl;
+        LOG_INFO(Logger::network(), "✅ Cargados {} peers baneados desde disco", bannedPeers.size());
     } catch (const std::exception& e) {
-        std::cerr << "❌ Error cargando lista de baneados: " << e.what() << std::endl;
+        LOG_ERROR(Logger::network(), "❌ Error cargando lista de baneados: {}", e.what());
     }
     
     fs.close();
@@ -829,7 +830,7 @@ void Node::loadBannedPeers(const std::string& filename) {
 void Node::saveBannedPeers(const std::string& filename) const {
     std::ofstream fs(filename, std::ios::binary);
     if (!fs.is_open()) {
-        std::cerr << "❌ No se pudo abrir archivo para guardar peers baneados" << std::endl;
+        LOG_ERROR(Logger::network(), "❌ No se pudo abrir archivo para guardar peers baneados");
         return;
     }
     
@@ -877,7 +878,7 @@ void Node::checkSyncStatus() {
     // Ask a random peer for their chain height
     auto witnesses = selectRandomWitnesses(1);
     if (witnesses.empty()) {
-        // std::cout << "ℹ️  Sin peers para verificar sincronización" << std::endl;
+        // LOG_INFO(Logger::network(), "ℹ️  Sin peers para verificar sincronización");
         return;
     }
     
@@ -919,34 +920,34 @@ void Node::requestBlockchain(std::shared_ptr<Peer> peer, uint64_t fromHeight) {
 
 void Node::processReceivedChain(const std::vector<Block>& blocks, uint64_t startHeight) {
     if (blocks.empty()) {
-        std::cout << "⚠️  Cadena recibida está vacía" << std::endl;
+        LOG_INFO(Logger::network(), "⚠️  Cadena recibida está vacía");
         return;
     }
     
     uint64_t ourHeight = blockchain.getChainSize() - 1;
     uint64_t receivedEndHeight = startHeight + blocks.size() - 1;
     
-    std::cout << "🔍 Validando cadena recibida..." << std::endl;
-    std::cout << "   Nuestra altura: " << ourHeight << std::endl;
-    // std::cout << "   Cadena recibida: " << startHeight << " - " << receivedEndHeight << std::endl;
+    LOG_INFO(Logger::network(), "🔍 Validando cadena recibida...");
+    LOG_INFO(Logger::network(), "   Nuestra altura: {}", ourHeight);
+    // LOG_INFO(Logger::network(), "{}{}{}", startHeight,  - , receivedEndHeight);
     
     // Add blocks one by one
     for (const auto& block : blocks) {
         Blockchain::BlockStatus status = blockchain.submitBlock(block);
         
         if (status == Blockchain::BlockStatus::ACCEPTED) {
-            std::cout << "   ✅ Bloque " << blockchain.getChainSize() - 1 << " aceptado" << std::endl;
+            LOG_INFO(Logger::network(), "Bloque {} aceptado", blockchain.getChainSize() - 1);
         } else if (status == Blockchain::BlockStatus::IGNORED_DUPLICATE) {
             // Skip duplicates
             continue;
         } else if (status == Blockchain::BlockStatus::REQUIRES_WITNESSING) {
-            std::cout << "   ⚠️  Bloque requiere witnessing - pausando sync" << std::endl;
+            LOG_INFO(Logger::network(), "   ⚠️  Bloque requiere witnessing - pausando sync");
             // Let the witnessing protocol handle it
             std::lock_guard<std::mutex> lock(syncStateMutex);
             syncState = SyncState::NEEDS_SYNC;
             return;
         } else {
-            std::cout << "   ❌ Bloque rechazado. Estado: " << (int)status << std::endl;
+            LOG_INFO(Logger::network(), "{}", (int)status);
             std::lock_guard<std::mutex> lock(syncStateMutex);
             syncState = SyncState::NEEDS_SYNC;
             return;
@@ -958,12 +959,12 @@ void Node::processReceivedChain(const std::vector<Block>& blocks, uint64_t start
     
     if (receivedEndHeight >= targetChainHeight || blocks.size() < BLOCKS_PER_REQUEST) {
         // We're synced!
-        std::cout << "✅ Sincronización completada. Altura: " << ourHeight << std::endl;
+        LOG_INFO(Logger::network(), "✅ Sincronización completada. Altura: {}", ourHeight);
         std::lock_guard<std::mutex> lock(syncStateMutex);
         syncState = SyncState::SYNCED;
     } else {
         // Request next batch
-        std::cout << "📥 Solicitando más bloques..." << std::endl;
+        LOG_INFO(Logger::network(), "📥 Solicitando más bloques...");
         // Find the peer and request more
         // For simplicity, we'll set state to NEEDS_SYNC and let it be triggered again
         std::lock_guard<std::mutex> lock(syncStateMutex);
@@ -998,7 +999,7 @@ void Node::discoverPeers() {
     {
         std::lock_guard<std::mutex> lock(knownPeersMutex);
         if (knownPeers.empty()) {
-            std::cout << "🌱 No known peers. Using seeds." << std::endl;
+            LOG_INFO(Logger::network(), "🌱 No known peers. Using seeds.");
             for (const auto& seed : seeds) {
                 knownPeers.insert(seed);
             }

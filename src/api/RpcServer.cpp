@@ -1,6 +1,9 @@
 #include "RpcServer.h"
 #include "ApiKeyManager.h"
 #include "../transaction.h"
+#include "../logger.h"
+#include <iostream>
+#include <sstream>
 #include <iostream>
 #include <sstream>
 #include <sys/socket.h>
@@ -61,16 +64,16 @@ void RpcServer::loadApiKeys() {
                 apiKeys[pair.first] = {pair.second.name, pair.second.revoked};
             }
         }
-        std::cout << "RPC: Loaded " << apiKeys.size() << " active API keys." << std::endl;
+        LOG_INFO(Logger::api(), "RPC: Loaded {} active API keys", apiKeys.size());
     } else {
-        std::cout << "RPC: No API keys loaded or file not found." << std::endl;
+        LOG_WARN(Logger::api(), "RPC: No API keys loaded or file not found");
     }
 }
 
 void RpcServer::acceptLoop(int port) {
     serverSocketFd = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocketFd == -1) {
-        std::cerr << "RPC: Error creating socket" << std::endl;
+        LOG_ERROR(Logger::api(), "RPC: Error creating socket");
         return;
     }
 
@@ -83,16 +86,16 @@ void RpcServer::acceptLoop(int port) {
     address.sin_port = htons(port);
 
     if (bind(serverSocketFd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        std::cerr << "RPC: Bind failed on port " << port << std::endl;
+        LOG_ERROR(Logger::api(), "RPC: Bind failed on port {}", port);
         return;
     }
 
     if (listen(serverSocketFd, 3) < 0) {
-        std::cerr << "RPC: Listen failed" << std::endl;
+        LOG_ERROR(Logger::api(), "RPC: Listen failed");
         return;
     }
 
-    std::cout << "RPC Server listening on port " << port << std::endl;
+    LOG_INFO(Logger::api(), "RPC Server listening on port {}", port);
 
     while (running) {
         struct sockaddr_in clientAddr;
@@ -100,7 +103,7 @@ void RpcServer::acceptLoop(int port) {
         int clientSocket = accept(serverSocketFd, (struct sockaddr*)&clientAddr, &addrLen);
         
         if (clientSocket < 0) {
-            if (running) std::cerr << "RPC: Accept failed" << std::endl;
+            if (running) LOG_ERROR(Logger::api(), "RPC: Accept failed");
             continue;
         }
 

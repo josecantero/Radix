@@ -65,6 +65,13 @@ RadixConfig ConfigManager::loadFromFile(const std::string& filepath) {
             if (blockchain.contains("difficulty")) config.difficulty = blockchain["difficulty"];
         }
         
+        // Logging settings
+        if (j.contains("logging")) {
+            auto logging = j["logging"];
+            if (logging.contains("directory")) config.log_dir = logging["directory"];
+            if (logging.contains("level")) config.log_level = logging["level"];
+        }
+        
         std::cout << "✅ Configuration loaded from: " << filepath << std::endl;
         
     } catch (const json::exception& e) {

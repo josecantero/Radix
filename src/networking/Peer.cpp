@@ -1,6 +1,7 @@
 #include "Peer.h"
 #include <unistd.h>
 #include <arpa/inet.h>
+#include "../logger.h"
 #include <iostream>
 #include <cstring>
 #include <vector>
@@ -18,7 +19,7 @@ void Peer::closeConnection() {
     if (connected) {
         close(socketFd);
         connected = false;
-        std::cout << "Conexion cerrada con peer: " << getIpAddress() << std::endl;
+        LOG_INFO(Logger::network(), "Conexion cerrada con peer: {}", getIpAddress());
     }
 }
 
@@ -105,7 +106,7 @@ bool Peer::readMessage(Message& msg) {
     if (msg.header.payloadSize > 0) {
         // Sanity check for size to avoid OOM attacks
         if (msg.header.payloadSize > 10 * 1024 * 1024) { // 10MB limit
-             std::cerr << "Payload demasiado grande de " << getIpAddress() << std::endl;
+             LOG_ERROR(Logger::network(), "Payload demasiado grande de {}", getIpAddress());
              closeConnection();
              return false;
         }

@@ -8,6 +8,7 @@
 #include "money_util.h" // Se asume que existe para formatRadsToRDX
 
 #include <iostream>
+#include "logger.h"
 #include <fstream>      // Para gestión de archivos
 #include <stdexcept>    // Para std::runtime_error
 #include <algorithm>    // Para std::remove_if
@@ -34,7 +35,7 @@ Blockchain::Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext
         chain.push_back(createGenesisBlock());
         // Inicializa el UTXO Set con las salidas del bloque génesis
         updateUtxoSet(chain[0]);
-        std::cout << "Blockchain inicializada con bloque genesis y dificultad: " << difficulty << std::endl;
+        LOG_INFO(Logger::blockchain(), "Blockchain inicializada con bloque genesis y dificultad: {}", difficulty);
     }
 }
 
@@ -60,7 +61,7 @@ Block Blockchain::createGenesisBlock() {
 bool Blockchain::addTransaction(const Radix::Transaction& transaction) {
     // Validar la transacción antes de añadirla a la piscina
     if (!transaction.isValid(utxoSet)) {
-        std::cerr << "Transaccion invalida. No se puede anadir a la piscina de transacciones pendientes." << std::endl;
+        LOG_ERROR(Logger::blockchain(), "Transaccion invalida. No se puede anadir a la piscina de transacciones pendientes");
         return false;
     }
     
@@ -72,7 +73,7 @@ bool Blockchain::addTransaction(const Radix::Transaction& transaction) {
     }
 
     pendingTransactions.push_back(transaction);
-    std::cout << "Transaccion " << transaction.id << " anadida a la piscina de pendientes." << std::endl;
+    LOG_INFO(Logger::blockchain(), "Transaccion {} anadida a la piscina de pendientes", transaction.id);
     return true;
 }
 
@@ -81,7 +82,7 @@ void Blockchain::minePendingTransactions(const std::string& miningRewardAddress,
     // Lógica del Halving:
     if (chain.size() > 0 && chain.size() % HALVING_INTERVAL == 0) {
         currentMiningReward /= 2;
-        std::cout << "\n¡HALVING! La recompensa de mineria se ha reducido a: " << Radix::formatRadsToRDX(currentMiningReward) << " RDX\n";
+        LOG_WARN(Logger::blockchain(), "¡HALVING! La recompensa de mineria se ha reducido a: {} RDX", Radix::formatRadsToRDX(currentMiningReward));
     }
 
     // Crear la transacción de recompensa de minería (coinbase)
@@ -96,12 +97,12 @@ void Blockchain::minePendingTransactions(const std::string& miningRewardAddress,
     Block newBlock(getLatestBlock().version + 1, previousHash, transactionsForBlock, difficulty, rxContext_);
 
     // Minar el bloque (encontrar un nonce válido)
-    std::cout << "Iniciando mineria del bloque con " << transactionsForBlock.size() << " transacciones..." << std::endl;
+    LOG_INFO(Logger::blockchain(), "Iniciando mineria del bloque con {} transacciones...", transactionsForBlock.size());
     newBlock.mineBlock(difficulty, running);
     
     if (!running) return; // Si se detuvo la minería, salir sin añadir el bloque
 
-    std::cout << "Bloque minado! Hash: " << newBlock.hash << ", Nonce: " << newBlock.nonce << std::endl;
+    LOG_INFO(Logger::blockchain(), "Bloque minado! Hash: {}, Nonce: {}", newBlock.hash, newBlock.nonce);
 
     // Añadir el nuevo bloque a la cadena
     chain.push_back(newBlock);
@@ -138,20 +139,19 @@ bool Blockchain::isChainValid() const {
         if (i > 0) {
             const Block& previousBlock = chain[i - 1];
             if (currentBlock.prevHash != previousBlock.hash) {
-                std::cerr << "Cadena Invalida: prevHash del bloque en el indice " << i
-                          << " no coincide con el hash del bloque anterior." << std::endl;
+                LOG_ERROR(Logger::blockchain(), "Cadena Invalida: prevHash del bloque en el indice {} no coincide con el hash del bloque anterior", i);
                 return false;
             }
         } else { // Bloque Génesis
             if (currentBlock.prevHash != "0000000000000000000000000000000000000000000000000000000000000000") {
-                std::cerr << "Bloque Genesis invalido: prevHash incorrecto." << std::endl;
+                LOG_ERROR(Logger::blockchain(), "Bloque Genesis invalido: prevHash incorrecto");
                 return false;
             }
         }
         
         // 2. Validar el bloque completo, incluyendo sus transacciones.
         if (!currentBlock.isValid(rxContext_, tempUtxoSet)) {
-            std::cerr << "Cadena Invalida: El bloque en el indice " << i << " no es valido (fallo en hash/dificultad/transacciones)." << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Cadena Invalida: El bloque en el indice {} no es valido (fallo en hash/dificultad/transacciones)", i);
             return false;
         }
         
@@ -178,12 +178,14 @@ bool Blockchain::isChainValid() const {
 
 // Imprime todos los bloques en la cadena
 void Blockchain::printChain() const {
-    std::cout << "--- Cadena de Bloques Radix ---\n";
+    // LOG_INFO(Logger::blockchain(), "--- Cadena de Bloques Radix ---");
     for (size_t i = 0; i < chain.size(); ++i) {
-        std::cout << "\nBloque #" << i << ":\n";
-        std::cout << chain[i].toString() << "\n";
+        // Logging enormous strings is probably not what we want to do by default.
+        // Keeping it but maybe commenting it out or moving it to debug level?
+        // Let's keep it as INFO for now but note it might be spammy.
+        // Actually, printChain seems like a debug function.
+        LOG_DEBUG(Logger::blockchain(), "Bloque #{}:\n{}", i, chain[i].toString());
     }
-    std::cout << "------------------------------\n";
 }
 
 // Obtiene el último bloque de la cadena
@@ -230,7 +232,7 @@ void Blockchain::rebuildUtxoSet() {
     for (const auto& block : chain) {
         updateUtxoSet(block); // Reconstruir el UTXO Set bloque por bloque
     }
-    std::cout << "UTXO Set reconstruido con " << utxoSet.size() << " entradas.\n";
+    LOG_INFO(Logger::blockchain(), "UTXO Set reconstruido con {} entradas", utxoSet.size());
 }
 
 // --------------------------------------------------------------------------------
@@ -270,13 +272,13 @@ void Blockchain::saveChain(const std::string& filename) const {
     }
 
     fs.close();
-    std::cout << "Blockchain guardada exitosamente en: " << filename << std::endl;
+    LOG_INFO(Logger::blockchain(), "Blockchain guardada exitosamente en: {}", filename);
 }
 
 bool Blockchain::loadChain(const std::string& filename) {
     std::fstream fs(filename, std::ios::in | std::ios::binary);
     if (!fs.is_open()) {
-        std::cerr << "Advertencia: No se pudo abrir el archivo de cadena (" << filename << "), se asumira una nueva inicializacion." << std::endl;
+        LOG_WARN(Logger::blockchain(), "Advertencia: No se pudo abrir el archivo de cadena ({}), se asumira una nueva inicializacion", filename);
         return false;
     }
 
@@ -319,7 +321,7 @@ bool Blockchain::loadChain(const std::string& filename) {
         rebuildUtxoSet(); // Reconstruir el UTXO Set a partir de la cadena cargada
         if (!isChainValid()) {
             // Si la cadena es inválida, se descarta y se reinicializa.
-            std::cerr << "Error: La cadena cargada del archivo es INVALIDA. Se descartara el estado cargado." << std::endl;
+            LOG_ERROR(Logger::blockchain(), "Error: La cadena cargada del archivo es INVALIDA. Se descartara el estado cargado");
             // Para "descartar el estado", simplemente se puede vaciar la cadena y dejar que el constructor/código externo
             // cree un nuevo génesis. Aquí solo retornamos false.
             chain.clear();
@@ -328,11 +330,11 @@ bool Blockchain::loadChain(const std::string& filename) {
             return false;
         }
 
-        std::cout << "Blockchain cargada exitosamente desde: " << filename << ". Tamanio: " << chain.size() << " bloques." << std::endl;
+        LOG_INFO(Logger::blockchain(), "Blockchain cargada exitosamente desde: {}. Tamanio: {} bloques", filename, chain.size());
         return true;
 
     } catch (const std::exception& e) {
-        std::cerr << "Error critico durante la carga binaria de la Blockchain. Se descarta el estado: " << e.what() << std::endl;
+        LOG_CRITICAL(Logger::blockchain(), "Error critico durante la carga binaria de la Blockchain. Se descarta el estado: {}", e.what());
         fs.close();
         chain.clear();
         pendingTransactions.clear();
@@ -398,14 +400,14 @@ void Blockchain::applyReorganization(const Block& block) {
     int ancestorIndex = getBlockHeight(block.prevHash);
     
     if (ancestorIndex == -1) {
-        std::cerr << "CRITICAL ERROR: Cannot apply reorganization. Ancestor block not found." << std::endl;
+        LOG_CRITICAL(Logger::blockchain(), "CRITICAL ERROR: Cannot apply reorganization. Ancestor block not found");
         return;
     }
 
-    std::cout << "⚠️  APPLYING REORGANIZATION ⚠️" << std::endl;
-    std::cout << "   Current Tip Height: " << getChainSize() - 1 << std::endl;
-    std::cout << "   New Tip Height: " << ancestorIndex + 1 << std::endl;
-    std::cout << "   Ancestor Hash: " << block.prevHash << std::endl;
+    LOG_WARN(Logger::blockchain(), "⚠️  APPLYING REORGANIZATION ⚠️");
+    LOG_WARN(Logger::blockchain(), "   Current Tip Height: {}", getChainSize() - 1);
+    LOG_WARN(Logger::blockchain(), "   New Tip Height: {}", ancestorIndex + 1);
+    LOG_WARN(Logger::blockchain(), "   Ancestor Hash: {}", block.prevHash);
 
     // 2. Truncate the chain
     // We keep blocks from 0 to ancestorIndex (inclusive)
@@ -419,7 +421,7 @@ void Blockchain::applyReorganization(const Block& block) {
     // This is expensive but necessary for correctness after a reorg
     rebuildUtxoSet();
 
-    std::cout << "✅ Reorganization applied successfully. New chain size: " << chain.size() << std::endl;
+    LOG_INFO(Logger::blockchain(), "✅ Reorganization applied successfully. New chain size: {}", chain.size());
 }
 
 // ============================================================================

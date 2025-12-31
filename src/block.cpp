@@ -6,6 +6,7 @@
 #include "persistence_util.h" // Para serialización binaria
 
 #include <iostream>
+#include "logger.h"
 #include <sstream>
 #include <iomanip> // Para std::hex, std::setfill, std::setw
 #include <limits>  // Para std::numeric_limits
@@ -66,7 +67,7 @@ void Block::mineBlock(unsigned int difficulty, const std::atomic<bool>& running)
     std::string target(difficulty, '0'); // Crea una cadena de '0's de la longitud de la dificultad
     std::string currentHash;
 
-    std::cout << "Minando bloque..." << std::endl;
+    LOG_INFO(Logger::blockchain(), "Minando bloque...");
 
     // Iterar hasta que el hash comience con el número requerido de ceros
     while (running) {
@@ -77,18 +78,18 @@ void Block::mineBlock(unsigned int difficulty, const std::atomic<bool>& running)
         nonce++; // Incrementa el nonce y prueba de nuevo
         // Pequeño truco para evitar un bucle infinito si el nonce se desborda
         if (nonce == std::numeric_limits<uint64_t>::max()) {
-            std::cerr << "Advertencia: Nonce ha alcanzado el maximo. Reiniciando para evitar bucle infinito." << std::endl;
+            LOG_WARN(Logger::blockchain(), "Advertencia: Nonce ha alcanzado el maximo. Reiniciando para evitar bucle infinito");
             nonce = 0; 
         }
     }
 
     if (!running) {
-        std::cout << "Mineria detenida." << std::endl;
+        LOG_INFO(Logger::blockchain(), "Mineria detenida");
         return;
     }
 
     hash = currentHash; // Almacena el hash encontrado
-    std::cout << "Bloque minado: " << hash << " (Nonce: " << nonce << ")" << std::endl;
+    LOG_INFO(Logger::blockchain(), "Bloque minado: {} (Nonce: {})", hash, nonce);
 }
 
 // Convierte el bloque a una representación de cadena para impresión/depuración
@@ -114,13 +115,13 @@ std::string Block::toString() const {
 bool Block::isValid(RandomXContext& rxContext_ref, const std::map<std::string, TransactionOutput>& utxoSet) const {
     // 1. Verificar que el hash del bloque es correcto
     if (this->hash != calculateHash()) {
-        std::cerr << "Error de validacion: El hash del bloque no coincide." << std::endl;
+        LOG_ERROR(Logger::blockchain(), "Error de validacion: El hash del bloque no coincide");
         return false;
     }
 
     // 2. Verificar la raíz de Merkle
     if (this->merkleRoot != calculateMerkleRoot()) {
-        std::cerr << "Error de validacion: La raiz de Merkle del bloque no coincide." << std::endl;
+        LOG_ERROR(Logger::blockchain(), "Error de validacion: La raiz de Merkle del bloque no coincide");
         return false;
     }
 
@@ -130,17 +131,17 @@ bool Block::isValid(RandomXContext& rxContext_ref, const std::map<std::string, T
     for (const auto& tx : transactions) {
         if (tx.isCoinbase) {
             if (!tx.inputs.empty()) {
-                std::cerr << "Error de validacion: Transaccion coinbase con inputs. TX ID: " << tx.calculateHash() << std::endl;
+                LOG_ERROR(Logger::blockchain(), "Error de validacion: Transaccion coinbase con inputs. TX ID: {}", tx.calculateHash());
                 return false;
             }
             if (tx.outputs.empty() || tx.outputs[0].amount <= 0) {
-                std::cerr << "Error de validacion: Transaccion coinbase invalida (output vacio o monto <= 0). TX ID: " << tx.calculateHash() << std::endl;
+                LOG_ERROR(Logger::blockchain(), "Error de validacion: Transaccion coinbase invalida (output vacio o monto <= 0). TX ID: {}", tx.calculateHash());
                 return false;
             }
         } else {
             // Para transacciones regulares, validar contra el tempUtxoSet
             if (!tx.isValid(tempUtxoSet)) {
-                std::cerr << "Error de validacion: Transaccion invalida dentro del bloque. TX ID: " << tx.calculateHash() << std::endl;
+                LOG_ERROR(Logger::blockchain(), "Error de validacion: Transaccion invalida dentro del bloque. TX ID: {}", tx.calculateHash());
                 return false;
             }
 
@@ -150,7 +151,7 @@ bool Block::isValid(RandomXContext& rxContext_ref, const std::map<std::string, T
                 if (tempUtxoSet.count(utxoKey)) {
                     tempUtxoSet.erase(utxoKey);
                 } else {
-                    std::cerr << "Error interno de validacion de bloque: UTXO de entrada no encontrada en tempUtxoSet. TX ID: " << tx.calculateHash() << ", UTXO: " << utxoKey << std::endl;
+                    LOG_ERROR(Logger::blockchain(), "Error interno de validacion de bloque: UTXO de entrada no encontrada en tempUtxoSet. TX ID: {}, UTXO: {}", tx.calculateHash(), utxoKey);
                     return false;
                 }
             }

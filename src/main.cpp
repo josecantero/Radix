@@ -13,13 +13,14 @@
 #include "api/RpcServer.h"
 #include "api/ApiKeyManager.h"
 #include "config.h"
+#include "logger.h"
 #include <openssl/provider.h>
 
 void initializeOpenSSL() {
     OSSL_PROVIDER* default_provider = OSSL_PROVIDER_load(NULL, "default");
     OSSL_PROVIDER* base_provider = OSSL_PROVIDER_load(NULL, "base");
     if (!default_provider || !base_provider) {
-        std::cerr << "Advertencia: No se pudieron cargar los proveedores OpenSSL." << std::endl;
+        Radix::Logger::main()->warn("No se pudieron cargar los proveedores OpenSSL");
     }
 }
 
@@ -45,7 +46,7 @@ void printUsage(const char* progName) {
 std::atomic<bool> g_running(true);
 
 void signalHandler(int signum) {
-    std::cout << "\nInterrupcion recibida (" << signum << "). Cerrando..." << std::endl;
+    Radix::Logger::main()->info("Interrupcion recibida ({}). Cerrando...", signum);
     g_running = false;
 }
 
@@ -104,6 +105,9 @@ int main(int argc, char* argv[]) {
     // Override with CLI arguments
     config = Radix::ConfigManager::loadFromArgs(argc, argv, config);
     
+    // Initialize Logger with config settings
+    Radix::Logger::init(config.log_dir, config.log_level);
+    
     // CLI Commands
     bool newWallet = false;
     std::string walletFile = "";
@@ -140,8 +144,8 @@ int main(int argc, char* argv[]) {
     if (newWallet) {
         Radix::Wallet wallet;
         wallet.saveToFile(walletFile);
-        std::cout << "✅ Nueva wallet creada en: " << walletFile << std::endl;
-        std::cout << "   Direccion: " << wallet.getAddress() << std::endl;
+        LOG_INFO(Radix::Logger::main(), "✅ Nueva wallet creada en: {}", walletFile);
+        LOG_INFO(Radix::Logger::main(), "   Direccion: {}", wallet.getAddress());
         return 0;
     }
 
@@ -151,32 +155,32 @@ int main(int argc, char* argv[]) {
 
     if (getBalance) {
         uint64_t balance = blockchain.getBalanceOfAddress(balanceAddress);
-        std::cout << "💰 Balance de " << balanceAddress << ": " << Radix::formatRadsToRDX(balance) << " RDX" << std::endl;
+        LOG_INFO(Radix::Logger::main(), "💰 Balance de {}: {} RDX", balanceAddress, Radix::formatRadsToRDX(balance));
         return 0;
     }
 
     if (sendTx) {
         try {
             Radix::Wallet wallet(sendWalletFile);
-            std::cout << "💸 Creando transaccion..." << std::endl;
-            std::cout << "   Desde: " << wallet.getAddress() << std::endl;
-            std::cout << "   Para:  " << sendRecipient << std::endl;
-            std::cout << "   Monto: " << Radix::formatRadsToRDX(sendAmount) << " RDX" << std::endl;
+            LOG_INFO(Radix::Logger::main(), "💸 Creando transaccion...");
+            LOG_INFO(Radix::Logger::main(), "   Desde: {}", wallet.getAddress());
+            LOG_INFO(Radix::Logger::main(), "   Para:  {}", sendRecipient);
+            LOG_INFO(Radix::Logger::main(), "   Monto: {} RDX", Radix::formatRadsToRDX(sendAmount));
 
             Radix::Transaction tx = wallet.createTransaction(sendRecipient, sendAmount, blockchain.getUtxoSet());
             
-            std::cout << "✅ Transaccion creada. ID: " << tx.id << std::endl;
+            LOG_INFO(Radix::Logger::main(), "✅ Transaccion creada. ID: {}", tx.id);
             
             // Add to blockchain locally
             if (blockchain.addTransaction(tx)) {
-                std::cout << "DEBUG (isValid): Transaccion valida." << std::endl;
-                std::cout << "Transaccion " << tx.id << " anadida a la piscina de pendientes." << std::endl;
+                LOG_DEBUG(Radix::Logger::main(), "Transaccion valida");
+                LOG_INFO(Radix::Logger::main(), "Transaccion {} anadida a la piscina de pendientes", tx.id);
                 
                 blockchain.saveChain("radix_blockchain.dat");
-                std::cout << "✅ Transaccion guardada en mempool local." << std::endl;
+                LOG_INFO(Radix::Logger::main(), "✅ Transaccion guardada en mempool local");
 
                 // Broadcast to network
-                std::cout << "📡 Propagando transaccion a la red..." << std::endl;
+                LOG_INFO(Radix::Logger::main(), "📡 Propagando transaccion a la red...");
                 Radix::Node node(blockchain);
                 node.discoverPeers(); // Connect to seeds/peers
                 
@@ -184,17 +188,17 @@ int main(int argc, char* argv[]) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 
                 node.broadcastTransaction(tx);
-                std::cout << "✅ Transaccion enviada a los peers." << std::endl;
+                LOG_INFO(Radix::Logger::main(), "✅ Transaccion enviada a los peers");
                 
                 // Give it a moment to send before exiting
                 std::this_thread::sleep_for(std::chrono::seconds(1));
 
             } else {
-                std::cerr << "❌ Error: La transaccion fue rechazada por la blockchain (posible doble gasto o invalida)." << std::endl;
+                LOG_ERROR(Radix::Logger::main(), "❌ La transaccion fue rechazada por la blockchain (posible doble gasto o invalida)");
                 return 1;
             }
         } catch (const std::exception& e) {
-            std::cerr << "❌ Error enviando transaccion: " << e.what() << std::endl;
+            LOG_ERROR(Radix::Logger::main(), "❌ Error enviando transaccion: {}", e.what());
             return 1;
         }
         return 0;
@@ -221,11 +225,11 @@ int main(int argc, char* argv[]) {
             config.rpc_ip_whitelist
         );
         rpcServer->start(config.rpc_port);
-        std::cout << "✅ RPC Server started on port " << config.rpc_port << std::endl;
+        LOG_INFO(Radix::Logger::main(), "✅ RPC Server started on port {}", config.rpc_port);
     }
 
     if (config.server_mode) {
-        std::cout << "Iniciando Radix Node..." << std::endl;
+        LOG_INFO(Radix::Logger::main(), "Iniciando Radix Node...");
         
         // Start server in a separate thread so we can mine in main thread if needed
         std::thread serverThread([&node, &config]() {
@@ -241,16 +245,16 @@ int main(int argc, char* argv[]) {
             if (colonPos != std::string::npos) {
                 std::string ip = config.connect_peer.substr(0, colonPos);
                 int p = std::stoi(config.connect_peer.substr(colonPos + 1));
-                std::cout << "Conectando a peer " << ip << ":" << p << "..." << std::endl;
+                LOG_INFO(Radix::Logger::main(), "Conectando a peer {}:{}...", ip, p);
                 node.connectToPeer(ip, p);
             } else {
-                std::cerr << "Formato de peer invalido. Use ip:port" << std::endl;
+                LOG_ERROR(Radix::Logger::main(), "Formato de peer invalido. Use ip:port");
             }
         }
 
         if (config.mining_enabled) {
-            std::cout << "Mineria habilitada. Minando para: " << config.miner_address << std::endl;
-            std::cout << "Nodo corriendo. Presione Ctrl+C para salir." << std::endl;
+            LOG_INFO(Radix::Logger::main(), "Mineria habilitada. Minando para: {}", config.miner_address);
+            LOG_INFO(Radix::Logger::main(), "Nodo corriendo.  Presione Ctrl+C para salir");
             
             // Main mining loop
             while (g_running) {
@@ -264,27 +268,30 @@ int main(int argc, char* argv[]) {
                 std::this_thread::sleep_for(std::chrono::seconds(1)); // Throttle
             }
         } else {
-            std::cout << "Nodo corriendo en modo solo servidor. Presione Ctrl+C para salir." << std::endl;
+            LOG_INFO(Radix::Logger::main(), "Nodo corriendo en modo solo servidor. Presione Ctrl+C para salir");
             while (g_running) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
         
-        std::cout << "Guardando blockchain y cerrando..." << std::endl;
+        LOG_INFO(Radix::Logger::main(), "Guardando blockchain y cerrando...");
         blockchain.saveChain("radix_blockchain.dat");
         node.stop();
         if (rpcServer) rpcServer->stop();
     } else if (config.rpc_enabled) { // If only RPC is enabled, but not serverMode
-        std::cout << "RPC Server corriendo. Presione Ctrl+C para salir." << std::endl;
+        LOG_INFO(Radix::Logger::main(), "RPC Server corriendo. Presione Ctrl+C para salir");
         while (g_running) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        std::cout << "Guardando blockchain y cerrando..." << std::endl;
+        LOG_INFO(Radix::Logger::main(), "Guardando blockchain y cerrando...");
         blockchain.saveChain("radix_blockchain.dat");
         if (rpcServer) rpcServer->stop();
     } else { // This case should ideally not be reached if the initial check is correct
-        std::cout << "Modo no especificado. Saliendo." << std::endl;
+        LOG_INFO(Radix::Logger::main(), "Modo no especificado. Saliendo");
     }
+    
+    // Shutdown logger
+    Radix::Logger::shutdown();
 
     return 0;
 }

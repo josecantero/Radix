@@ -23,5 +23,9 @@
   "blockchain": {
     "data_dir": "./data",
     "difficulty": 1
+  },
+  "logging": {
+    "directory": "./logs",
+    "level": "info"
   }
 }
