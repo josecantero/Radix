@@ -97,6 +97,7 @@ radix_blockchain/
 │   │   ├── Node.cpp/h             # P2P node implementation
 │   │   ├── Peer.cpp/h             # Peer connection handling
 │   │   └── Message.h              # Network message protocol
+│   ├── base58.cpp/h               # Base58 encoding/decoding
 │   ├── blockchain.cpp/h           # Blockchain core logic
 │   ├── block.cpp/h                # Block structure and validation
 │   ├── transaction.cpp/h          # Transaction handling and UTXO
@@ -107,9 +108,13 @@ radix_blockchain/
 │   ├── merkle_tree.cpp/h          # Merkle tree implementation
 │   ├── money_util.cpp/h           # Currency formatting (RDX)
 │   ├── persistence_util.cpp/h     # Binary serialization
+│   ├── logger.cpp/h               # Structured logging (spdlog)
 │   └── main.cpp                   # CLI entry point
 ├── configs/                       # Example node configurations
-├── scripts/                       # Helper scripts (e.g., Verify RPC)
+├── scripts/                       # Helper scripts
+│   ├── run_multi_node.sh          # Local testnet launcher
+│   ├── verify_rpc.py              # RPC verification tool
+│   └── migrate_logging.sh         # Migration helper
 ├── tests/
 │   ├── test_crypto.cpp            # Cryptography unit tests
 │   ├── test_transaction.cpp       # Transaction unit tests
@@ -118,6 +123,8 @@ radix_blockchain/
 │   ├── test_ratelimiter.cpp       # Rate limiter tests
 │   └── CMakeLists.txt             # Test build configuration
 ├── CMakeLists.txt                 # Build configuration
+├── Dockerfile                     # Container definition
+├── docker-compose.yml             # Multi-node orchestration
 └── README.md                      # This file
 ```
 
