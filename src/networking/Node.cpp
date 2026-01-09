@@ -10,14 +10,14 @@
 #include <random>
 #include <fstream>
 
-namespace Radix {
+namespace Soverx {
 
 Node::Node(Blockchain& blockchain) : blockchain(blockchain), running(false), syncState(SyncState::NEEDS_SYNC) {
-    loadBannedPeers("radix_banned_peers.dat");
+    loadBannedPeers("svx_banned_peers.dat");
 }
 
 Node::~Node() {
-    saveBannedPeers("radix_banned_peers.dat");
+    saveBannedPeers("svx_banned_peers.dat");
     stop();
 }
 
@@ -118,7 +118,7 @@ bool Node::connectToPeer(const std::string& ip, int port) {
 
     // Initiate Handshake
     Message handshakeMsg;
-    handshakeMsg.header.magic = RADIX_NETWORK_MAGIC;
+    handshakeMsg.header.magic = SOVERX_NETWORK_MAGIC;
     handshakeMsg.header.type = MessageType::HANDSHAKE;
     handshakeMsg.header.payloadSize = 0;
     handshakeMsg.header.checksum = calculateChecksum(handshakeMsg.payload);
@@ -141,7 +141,7 @@ void Node::broadcast(const Message& msg) {
 
 void Node::broadcastBlock(const Block& block) {
     Message msg;
-    msg.header.magic = RADIX_NETWORK_MAGIC;
+    msg.header.magic = SOVERX_NETWORK_MAGIC;
     msg.header.type = MessageType::NEW_BLOCK;
 
     // Serialize block to payload
@@ -201,7 +201,7 @@ void Node::handlePeer(std::shared_ptr<Peer> peer) {
 
 void Node::broadcastTransaction(const Transaction& tx) {
     Message msg;
-    msg.header.magic = RADIX_NETWORK_MAGIC;
+    msg.header.magic = SOVERX_NETWORK_MAGIC;
     msg.header.type = MessageType::NEW_TRANSACTION;
     
     std::stringstream ss;
@@ -217,7 +217,7 @@ void Node::broadcastTransaction(const Transaction& tx) {
 }
 
 void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
-    if (msg.header.magic != RADIX_NETWORK_MAGIC) {
+    if (msg.header.magic != SOVERX_NETWORK_MAGIC) {
         LOG_ERROR(Logger::network(), "Mensaje con Magic invalido de {}", peer->getIpAddress());
         peer->closeConnection();
         return;
@@ -235,7 +235,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             LOG_INFO(Logger::network(), "Recibido HANDSHAKE de {}", peer->getIpAddress());
             // Respond with ACK
             Message ackMsg;
-            ackMsg.header.magic = RADIX_NETWORK_MAGIC;
+            ackMsg.header.magic = SOVERX_NETWORK_MAGIC;
             ackMsg.header.type = MessageType::HANDSHAKE_ACK;
             ackMsg.header.payloadSize = 0;
             ackMsg.header.checksum = calculateChecksum(ackMsg.payload);
@@ -245,7 +245,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
             // Send GET_PEERS to discover more nodes
             Message getPeersMsg;
-            getPeersMsg.header.magic = RADIX_NETWORK_MAGIC;
+            getPeersMsg.header.magic = SOVERX_NETWORK_MAGIC;
             getPeersMsg.header.type = MessageType::GET_PEERS;
             getPeersMsg.header.payloadSize = 0;
             getPeersMsg.header.checksum = calculateChecksum(getPeersMsg.payload);
@@ -259,7 +259,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
             // Send GET_PEERS to discover more nodes
             Message getPeersMsg;
-            getPeersMsg.header.magic = RADIX_NETWORK_MAGIC;
+            getPeersMsg.header.magic = SOVERX_NETWORK_MAGIC;
             getPeersMsg.header.type = MessageType::GET_PEERS;
             getPeersMsg.header.payloadSize = 0;
             getPeersMsg.header.checksum = calculateChecksum(getPeersMsg.payload);
@@ -283,7 +283,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
 
             try {
                 std::stringstream ss(std::string(msg.payload.begin(), msg.payload.end()));
-                Radix::RandomXContext dummyContext; 
+                Soverx::RandomXContext dummyContext; 
                 Block newBlock(0, "", {}, 0, dummyContext); 
                 newBlock.deserialize(ss);
 
@@ -343,7 +343,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                         queryPayload.blockHash[64] = '\0';
                         
                         Message queryMsg;
-                        queryMsg.header.magic = RADIX_NETWORK_MAGIC;
+                        queryMsg.header.magic = SOVERX_NETWORK_MAGIC;
                         queryMsg.header.type = MessageType::WITNESS_QUERY;
                         queryMsg.header.payloadSize = sizeof(queryPayload);
                         queryMsg.header.checksum = calculateChecksum(queryMsg.payload);
@@ -384,7 +384,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             LOG_INFO(Logger::network(), "📡 Received GET_PEERS request.");
             // Send PEER_LIST
             Message response;
-            response.header.magic = RADIX_NETWORK_MAGIC;
+            response.header.magic = SOVERX_NETWORK_MAGIC;
             response.header.type = MessageType::PEER_LIST;
             
             std::string peerListStr;
@@ -418,7 +418,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                     knownPeers.insert(segment);
                 }
             }
-            saveKnownPeers("radix_peers.dat");
+            saveKnownPeers("svx_peers.dat");
             break;
         }
 
@@ -491,7 +491,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             
             // Create response message
             Message response;
-            response.header.magic = RADIX_NETWORK_MAGIC;
+            response.header.magic = SOVERX_NETWORK_MAGIC;
             response.header.type = MessageType::SEND_CHAIN;
             response.header.payloadSize = serialized.size();
             response.header.checksum = calculateChecksum(response.payload);
@@ -517,7 +517,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
                 
                 // Read blocks
                 std::vector<Block> receivedBlocks;
-                Radix::RandomXContext dummyContext;
+                Soverx::RandomXContext dummyContext;
                 
                 for (uint64_t i = 0; i < blockCount; ++i) {
                     Block block(0, "", {}, 0, dummyContext);
@@ -557,7 +557,7 @@ void Node::processMessage(std::shared_ptr<Peer> peer, const Message& msg) {
             resp.agrees = agrees;
             
             Message respMsg;
-            respMsg.header.magic = RADIX_NETWORK_MAGIC;
+            respMsg.header.magic = SOVERX_NETWORK_MAGIC;
             respMsg.header.type = MessageType::WITNESS_RESPONSE;
             respMsg.header.payloadSize = sizeof(resp);
             respMsg.header.checksum = calculateChecksum(respMsg.payload);
@@ -718,7 +718,7 @@ void Node::banPeer(const std::string& ip, const std::string& reason) {
         }
     }
     
-    saveBannedPeers("radix_banned_peers.dat");
+    saveBannedPeers("svx_banned_peers.dat");
 }
 
 void Node::processWitnessQueryResult(const std::string& blockHash) {
@@ -905,7 +905,7 @@ void Node::requestBlockchain(std::shared_ptr<Peer> peer, uint64_t fromHeight) {
     payload.maxBlocks = BLOCKS_PER_REQUEST;
     
     Message msg;
-    msg.header.magic = RADIX_NETWORK_MAGIC;
+    msg.header.magic = SOVERX_NETWORK_MAGIC;
     msg.header.type = MessageType::REQUEST_CHAIN;
     msg.header.payloadSize = sizeof(payload);
     msg.payload.resize(sizeof(payload));
@@ -987,7 +987,7 @@ bool Node::needsSync() const {
 // ------------------------------------------------------------------------
 
 void Node::discoverPeers() {
-    loadKnownPeers("radix_peers.dat");
+    loadKnownPeers("svx_peers.dat");
 
     // Seed Nodes (Hardcoded for now)
     std::vector<std::string> seeds = {
@@ -1129,4 +1129,4 @@ void Node::cleanupSeenCaches() {
     }
 }
 
-} // namespace Radix
+} // namespace Soverx

@@ -10,7 +10,7 @@ RPC_PORT = 8098
 RPC_URL = f"http://127.0.0.1:{RPC_PORT}"
 CONFIG_FILE = "config_test.json"
 KEYS_FILE = "api_keys_test.json"
-RADIX_BIN = "./build/radix_blockchain"
+RADIX_BIN = "./build/soverx_node"
 LOG_FILE = "node_verification_output.log"
 
 def setup():
@@ -54,7 +54,7 @@ def generate_key():
     return None
 
 def start_node():
-    print("Starting Radix node...")
+    print("Starting Soverx node...")
     # Start node in background with redirection to file
     log_file = open(LOG_FILE, "w")
     process = subprocess.Popen(

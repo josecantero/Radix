@@ -1,6 +1,6 @@
 // transaction.h
-#ifndef TRANSACTION_H
-#define TRANSACTION_H
+#ifndef SOVERX_TRANSACTION_H
+#define SOVERX_TRANSACTION_H
 
 #include <string>
 #include <vector>
@@ -8,9 +8,9 @@
 #include <cstdint> // Para uint64_t
 #include <iostream> // Para serialización
 
-#include "crypto.h" // Para Radix::PublicKey, Radix::Signature, Radix::RandomXHash
+#include "crypto.h" // Para Soverx::PublicKey, Soverx::Signature, Soverx::RandomXHash
 
-namespace Radix {
+namespace Soverx {
 
 // Declaración anticipada de las clases y utilidades de persistencia
 namespace Persistence {
@@ -96,6 +96,6 @@ private:
     std::string calculateRawHash() const;
 };
 
-} // namespace Radix
+} // namespace Soverx
 
 #endif // TRANSACTION_H

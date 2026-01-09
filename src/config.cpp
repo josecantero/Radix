@@ -6,14 +6,14 @@
 
 using json = nlohmann::json;
 
-namespace Radix {
+namespace Soverx {
 
-RadixConfig ConfigManager::getDefaults() {
-    return RadixConfig(); // All defaults from struct initialization
+SoverxConfig ConfigManager::getDefaults() {
+    return SoverxConfig(); // All defaults from struct initialization
 }
 
-RadixConfig ConfigManager::loadFromFile(const std::string& filepath) {
-    RadixConfig config = getDefaults();
+SoverxConfig ConfigManager::loadFromFile(const std::string& filepath) {
+    SoverxConfig config = getDefaults();
     
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -81,8 +81,8 @@ RadixConfig ConfigManager::loadFromFile(const std::string& filepath) {
     return config;
 }
 
-RadixConfig ConfigManager::loadFromArgs(int argc, char* argv[], const RadixConfig& defaults) {
-    RadixConfig config = defaults;
+SoverxConfig ConfigManager::loadFromArgs(int argc, char* argv[], const SoverxConfig& defaults) {
+    SoverxConfig config = defaults;
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--server") == 0) {
@@ -108,4 +108,4 @@ RadixConfig ConfigManager::loadFromArgs(int argc, char* argv[], const RadixConfi
     return config;
 }
 
-} // namespace Radix
+} // namespace Soverx

@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <vector>
 
-namespace Radix {
+namespace Soverx {
 
 // Static member initialization
 std::shared_ptr<spdlog::logger> Logger::blockchainLogger = nullptr;
@@ -37,7 +37,7 @@ void Logger::init(const std::string& logDir, const std::string& level) {
     initialized = true;
 
     // Initial log message
-    mainLogger->info("Radix Logger initialized - Log directory: {}, Level: {}", logDir, level);
+    mainLogger->info("Soverx Logger initialized - Log directory: {}, Level: {}", logDir, level);
 }
 
 std::shared_ptr<spdlog::logger> Logger::blockchain() {
@@ -134,4 +134,4 @@ spdlog::level::level_enum Logger::parseLogLevel(const std::string& level) {
     return spdlog::level::info;
 }
 
-} // namespace Radix
+} // namespace Soverx

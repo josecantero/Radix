@@ -14,13 +14,13 @@
 #include <algorithm>    // Para std::remove_if
 #include <utility>      // Para std::pair
 
-namespace Radix {
+namespace Soverx {
 
 // Constante para el factor de decimales de la moneda (10^8)
 //const uint64_t RDX_DECIMAL_FACTOR = 100000000ULL; // 10^8
 
 // Constructor de la Blockchain
-Blockchain::Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext_ref)
+Blockchain::Blockchain(unsigned int difficulty, Soverx::RandomXContext& rxContext_ref)
     : difficulty(difficulty), currentMiningReward(100ULL * RDX_DECIMAL_FACTOR), rxContext_(rxContext_ref) { // Recompensa de minería inicial y referencia
     // El constructor por defecto ahora solo inicializa, si se llama a loadChain
     // no se creará el bloque génesis. Si no se llama, el código externo
@@ -58,7 +58,7 @@ Block Blockchain::createGenesisBlock() {
 }
 
 // Añade una transacción a las transacciones pendientes
-bool Blockchain::addTransaction(const Radix::Transaction& transaction) {
+bool Blockchain::addTransaction(const Soverx::Transaction& transaction) {
     // Validar la transacción antes de añadirla a la piscina
     if (!transaction.isValid(utxoSet)) {
         LOG_ERROR(Logger::blockchain(), "Transaccion invalida. No se puede anadir a la piscina de transacciones pendientes");
@@ -82,7 +82,7 @@ void Blockchain::minePendingTransactions(const std::string& miningRewardAddress,
     // Lógica del Halving:
     if (chain.size() > 0 && chain.size() % HALVING_INTERVAL == 0) {
         currentMiningReward /= 2;
-        LOG_WARN(Logger::blockchain(), "¡HALVING! La recompensa de mineria se ha reducido a: {} RDX", Radix::formatRadsToRDX(currentMiningReward));
+        LOG_WARN(Logger::blockchain(), "¡HALVING! La recompensa de mineria se ha reducido a: {} RDX", Soverx::formatRadsToRDX(currentMiningReward));
     }
 
     // Crear la transacción de recompensa de minería (coinbase)
@@ -178,7 +178,7 @@ bool Blockchain::isChainValid() const {
 
 // Imprime todos los bloques en la cadena
 void Blockchain::printChain() const {
-    // LOG_INFO(Logger::blockchain(), "--- Cadena de Bloques Radix ---");
+    // LOG_INFO(Logger::blockchain(), "--- Cadena de Bloques Soverx ---");
     for (size_t i = 0; i < chain.size(); ++i) {
         // Logging enormous strings is probably not what we want to do by default.
         // Keeping it but maybe commenting it out or moving it to debug level?
@@ -451,4 +451,4 @@ const Block* Blockchain::getBlockAtHeight(uint64_t height) const {
     return &chain[height];
 }
 
-} // namespace Radix
+} // namespace Soverx

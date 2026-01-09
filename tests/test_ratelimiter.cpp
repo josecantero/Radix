@@ -3,7 +3,7 @@
 #include <thread>
 #include <chrono>
 
-using namespace Radix;
+using namespace Soverx;
 
 TEST(RateLimiterTest, AllowsRequestsUnderLimit) {
     RateLimiter limiter(5); // 5 requests per minute

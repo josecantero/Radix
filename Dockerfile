@@ -24,7 +24,7 @@ RUN git clone https://github.com/tevador/RandomX.git . && \
     ldconfig
 
 # Copy source code
-WORKDIR /radix
+WORKDIR /soverx
 COPY . .
 
 # Build Radix
@@ -45,14 +45,14 @@ COPY --from=builder /usr/local/lib/librandomx.* /usr/local/lib/
 RUN ldconfig
 
 # Copy compiled binary
-COPY --from=builder /radix/build/radix_blockchain /usr/local/bin/radix_blockchain
+COPY --from=builder /soverx/build/soverx_node /usr/local/bin/soverx_node
 
 # Create data directory
-RUN mkdir -p /radix/data
-WORKDIR /radix
+RUN mkdir -p /soverx/data
+WORKDIR /soverx
 
 # Expose P2P and RPC ports
 EXPOSE 8080 8090
 
 # Default command: start server with RPC enabled
-CMD ["radix_blockchain", "--server", "--rpc"]
+CMD ["soverx_node", "--server", "--rpc"]

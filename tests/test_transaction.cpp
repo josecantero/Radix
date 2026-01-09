@@ -15,10 +15,10 @@ protected:
 
 // Test: Coinbase transaction creation
 TEST_F(TransactionTest, CoinbaseCreation) {
-    std::string recipientAddr = "radix_test_address";
+    std::string recipientAddr = "svx_test_address";
     uint64_t amount = 5000000000ULL; // 50 RDX
     
-    Radix::Transaction coinbase(recipientAddr, amount, true);
+    Soverx::Transaction coinbase(recipientAddr, amount, true);
     
     EXPECT_TRUE(coinbase.isCoinbase);
     EXPECT_EQ(coinbase.inputs.size(), 0);
@@ -31,13 +31,13 @@ TEST_F(TransactionTest, CoinbaseCreation) {
 
 // Test: Normal transaction creation
 TEST_F(TransactionTest, NormalTransactionCreation) {
-    Radix::TransactionInput input("prev_tx_id", 0, {}, {});
-    Radix::TransactionOutput output(1000000000ULL, "radix_recipient");
+    Soverx::TransactionInput input("prev_tx_id", 0, {}, {});
+    Soverx::TransactionOutput output(1000000000ULL, "svx_recipient");
     
-    std::vector<Radix::TransactionInput> inputs = {input};
-    std::vector<Radix::TransactionOutput> outputs = {output};
+    std::vector<Soverx::TransactionInput> inputs = {input};
+    std::vector<Soverx::TransactionOutput> outputs = {output};
     
-    Radix::Transaction tx(inputs, outputs);
+    Soverx::Transaction tx(inputs, outputs);
     
     EXPECT_FALSE(tx.isCoinbase);
     EXPECT_EQ(tx.inputs.size(), 1);
@@ -47,14 +47,14 @@ TEST_F(TransactionTest, NormalTransactionCreation) {
 
 // Test: Transaction serialization/deserialization
 TEST_F(TransactionTest, Serialization) {
-    Radix::Transaction original("radix_test", 1000000000ULL, true);
+    Soverx::Transaction original("svx_test", 1000000000ULL, true);
     
     // Serialize
     std::stringstream ss;
     original.serialize(ss);
     
     // Deserialize
-    Radix::Transaction deserialized;
+    Soverx::Transaction deserialized;
     deserialized.deserialize(ss);
     
     // Verify
@@ -71,8 +71,8 @@ TEST_F(TransactionTest, Serialization) {
 
 // Test: Transaction hash calculation
 TEST_F(TransactionTest, HashCalculation) {
-    Radix::Transaction tx1("radix_addr1", 1000000000ULL, true);
-    Radix::Transaction tx2("radix_addr2", 1000000000ULL, true);
+    Soverx::Transaction tx1("svx_addr1", 1000000000ULL, true);
+    Soverx::Transaction tx2("svx_addr2", 1000000000ULL, true);
     
     // Different transactions should have different hashes
     EXPECT_NE(tx1.id, tx2.id);
@@ -85,8 +85,8 @@ TEST_F(TransactionTest, HashCalculation) {
 
 // Test: Transaction validation - coinbase should always be valid
 TEST_F(TransactionTest, CoinbaseValidation) {
-    Radix::Transaction coinbase("radix_miner", 5000000000ULL, true);
-    std::map<std::string, Radix::TransactionOutput> emptyUTXO;
+    Soverx::Transaction coinbase("svx_miner", 5000000000ULL, true);
+    std::map<std::string, Soverx::TransactionOutput> emptyUTXO;
     
     // Coinbase transactions don't need UTXO validation
     bool valid = coinbase.isValid(emptyUTXO);
@@ -95,11 +95,11 @@ TEST_F(TransactionTest, CoinbaseValidation) {
 
 // Test: Empty transaction inputs/outputs
 TEST_F(TransactionTest, EmptyInputsOutputs) {
-    std::vector<Radix::TransactionInput> inputs;
-    std::vector<Radix::TransactionOutput> outputs;
+    std::vector<Soverx::TransactionInput> inputs;
+    std::vector<Soverx::TransactionOutput> outputs;
     
     // Creating transaction with empty vectors should not crash
-    Radix::Transaction tx(inputs, outputs);
+    Soverx::Transaction tx(inputs, outputs);
     
     EXPECT_EQ(tx.inputs.size(), 0);
     EXPECT_EQ(tx.outputs.size(), 0);
@@ -109,9 +109,9 @@ TEST_F(TransactionTest, EmptyInputsOutputs) {
 // Test: Transaction output construction
 TEST_F(TransactionTest, TransactionOutputConstruction) {
     uint64_t amount = 1234567890ULL;
-    std::string address = "radix_recipient";
+    std::string address = "svx_recipient";
     
-    Radix::TransactionOutput output(amount, address);
+    Soverx::TransactionOutput output(amount, address);
     
     EXPECT_EQ(output.amount, amount);
     EXPECT_EQ(output.recipientAddress, address);
@@ -121,10 +121,10 @@ TEST_F(TransactionTest, TransactionOutputConstruction) {
 TEST_F(TransactionTest, TransactionInputConstruction) {
     std::string prevTxId = "previous_transaction_id";
     uint64_t outputIndex = 3;
-    Radix::PublicKey pubKey = {0x01, 0x02, 0x03};
-    Radix::Signature sig = {0x04, 0x05, 0x06};
+    Soverx::PublicKey pubKey = {0x01, 0x02, 0x03};
+    Soverx::Signature sig = {0x04, 0x05, 0x06};
     
-    Radix::TransactionInput input(prevTxId, outputIndex, pubKey, sig);
+    Soverx::TransactionInput input(prevTxId, outputIndex, pubKey, sig);
     
     EXPECT_EQ(input.prevTxId, prevTxId);
     EXPECT_EQ(input.outputIndex, outputIndex);

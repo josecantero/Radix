@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(RadixBlockchain CXX)
+project(soverx CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -34,11 +34,12 @@ endif()
 
 # Encontrar y enlazar OpenSSL
 find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
 
 # ============================================================================
-# RADIX CORE LIBRARY (shared between main executable and tests)
+# SOVERX CORE LIBRARY (shared between main executable and tests)
 # ============================================================================
-add_library(radix_core STATIC
+add_library(soverx_core STATIC
     src/blockchain.cpp
     src/block.cpp
     src/transaction.cpp
@@ -59,9 +60,10 @@ add_library(radix_core STATIC
 )
 
 # Link libraries to core
-target_link_libraries(radix_core
+target_link_libraries(soverx_core
     ${RANDOMX_LIBRARY}
     ${OPENSSL_LIBRARIES}
+    ZLIB::ZLIB
     nlohmann_json::nlohmann_json
     spdlog::spdlog
 )
@@ -69,13 +71,13 @@ target_link_libraries(radix_core
 # ============================================================================
 # MAIN EXECUTABLE
 # ============================================================================
-add_executable(radix_blockchain
+add_executable(soverx_node
     src/main.cpp
 )
 
-# Enlazar con radix_core library
-target_link_libraries(radix_blockchain
-    radix_core
+# Enlazar con soverx_core library
+target_link_libraries(soverx_node
+    soverx_core
 )
 
 # ============================================================================

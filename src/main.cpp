@@ -20,7 +20,7 @@ void initializeOpenSSL() {
     OSSL_PROVIDER* default_provider = OSSL_PROVIDER_load(NULL, "default");
     OSSL_PROVIDER* base_provider = OSSL_PROVIDER_load(NULL, "base");
     if (!default_provider || !base_provider) {
-        Radix::Logger::main()->warn("No se pudieron cargar los proveedores OpenSSL");
+        Soverx::Logger::main()->warn("No se pudieron cargar los proveedores OpenSSL");
     }
 }
 
@@ -46,7 +46,7 @@ void printUsage(const char* progName) {
 std::atomic<bool> g_running(true);
 
 void signalHandler(int signum) {
-    Radix::Logger::main()->info("Interrupcion recibida ({}). Cerrando...", signum);
+    Soverx::Logger::main()->info("Interrupcion recibida ({}). Cerrando...", signum);
     g_running = false;
 }
 
@@ -60,20 +60,20 @@ int main(int argc, char* argv[]) {
         if (std::string(argv[i]) == "--rpc-genkey" && i + 2 < argc) {
             std::string name = argv[i+1];
             std::string file = argv[i+2];
-            std::string key = Radix::ApiKeyManager::createKey(name, file);
+            std::string key = Soverx::ApiKeyManager::createKey(name, file);
             std::cout << "Generated new API Key for '" << name << "': " << key << std::endl;
             std::cout << "Saved to " << file << std::endl;
             return 0;
         }
         else if (std::string(argv[i]) == "--rpc-listkeys" && i + 1 < argc) {
             std::string file = argv[i+1];
-            Radix::ApiKeyManager::listKeys(file);
+            Soverx::ApiKeyManager::listKeys(file);
             return 0;
         }
         else if (std::string(argv[i]) == "--rpc-revokekey" && i + 2 < argc) {
             std::string key = argv[i+1];
             std::string file = argv[i+2];
-            if (Radix::ApiKeyManager::revokeKey(key, file)) {
+            if (Soverx::ApiKeyManager::revokeKey(key, file)) {
                 std::cout << "Key revoked successfully." << std::endl;
             } else {
                 std::cout << "Key not found or could not be revoked." << std::endl;
@@ -94,19 +94,19 @@ int main(int argc, char* argv[]) {
     }
     
     // Load config from file (or defaults if not found)
-    Radix::RadixConfig config;
+    Soverx::SoverxConfig config;
     try {
-        config = Radix::ConfigManager::loadFromFile(configFile);
+        config = Soverx::ConfigManager::loadFromFile(configFile);
     } catch (const std::exception& e) {
         std::cerr << "❌ Error loading config: " << e.what() << std::endl;
         return 1;
     }
     
     // Override with CLI arguments
-    config = Radix::ConfigManager::loadFromArgs(argc, argv, config);
+    config = Soverx::ConfigManager::loadFromArgs(argc, argv, config);
     
     // Initialize Logger with config settings
-    Radix::Logger::init(config.log_dir, config.log_level);
+    Soverx::Logger::init(config.log_dir, config.log_level);
     
     // CLI Commands
     bool newWallet = false;
@@ -142,63 +142,63 @@ int main(int argc, char* argv[]) {
 
     // Handle CLI Commands first (non-daemon modes)
     if (newWallet) {
-        Radix::Wallet wallet;
+        Soverx::Wallet wallet;
         wallet.saveToFile(walletFile);
-        LOG_INFO(Radix::Logger::main(), "✅ Nueva wallet creada en: {}", walletFile);
-        LOG_INFO(Radix::Logger::main(), "   Direccion: {}", wallet.getAddress());
+        LOG_INFO(Soverx::Logger::main(), "✅ Nueva wallet creada en: {}", walletFile);
+        LOG_INFO(Soverx::Logger::main(), "   Direccion: {}", wallet.getAddress());
         return 0;
     }
 
-    Radix::RandomXContext rxContext;
-    Radix::Blockchain blockchain(1, rxContext);
-    blockchain.loadChain("radix_blockchain.dat");
+    Soverx::RandomXContext rxContext;
+    Soverx::Blockchain blockchain(1, rxContext);
+    blockchain.loadChain("svx_blockchain.dat");
 
     if (getBalance) {
         uint64_t balance = blockchain.getBalanceOfAddress(balanceAddress);
-        LOG_INFO(Radix::Logger::main(), "💰 Balance de {}: {} RDX", balanceAddress, Radix::formatRadsToRDX(balance));
+        LOG_INFO(Soverx::Logger::main(), "💰 Balance de {}: {} XSV", balanceAddress, Soverx::formatRadsToRDX(balance));
         return 0;
     }
 
     if (sendTx) {
         try {
-            Radix::Wallet wallet(sendWalletFile);
-            LOG_INFO(Radix::Logger::main(), "💸 Creando transaccion...");
-            LOG_INFO(Radix::Logger::main(), "   Desde: {}", wallet.getAddress());
-            LOG_INFO(Radix::Logger::main(), "   Para:  {}", sendRecipient);
-            LOG_INFO(Radix::Logger::main(), "   Monto: {} RDX", Radix::formatRadsToRDX(sendAmount));
+            Soverx::Wallet wallet(sendWalletFile);
+            LOG_INFO(Soverx::Logger::main(), "💸 Creando transaccion...");
+            LOG_INFO(Soverx::Logger::main(), "   Desde: {}", wallet.getAddress());
+            LOG_INFO(Soverx::Logger::main(), "   Para:  {}", sendRecipient);
+            LOG_INFO(Soverx::Logger::main(), "   Monto: {} XSV", Soverx::formatRadsToRDX(sendAmount));
 
-            Radix::Transaction tx = wallet.createTransaction(sendRecipient, sendAmount, blockchain.getUtxoSet());
+            Soverx::Transaction tx = wallet.createTransaction(sendRecipient, sendAmount, blockchain.getUtxoSet());
             
-            LOG_INFO(Radix::Logger::main(), "✅ Transaccion creada. ID: {}", tx.id);
+            LOG_INFO(Soverx::Logger::main(), "✅ Transaccion creada. ID: {}", tx.id);
             
             // Add to blockchain locally
             if (blockchain.addTransaction(tx)) {
-                LOG_DEBUG(Radix::Logger::main(), "Transaccion valida");
-                LOG_INFO(Radix::Logger::main(), "Transaccion {} anadida a la piscina de pendientes", tx.id);
+                LOG_DEBUG(Soverx::Logger::main(), "Transaccion valida");
+                LOG_INFO(Soverx::Logger::main(), "Transaccion {} anadida a la piscina de pendientes", tx.id);
                 
-                blockchain.saveChain("radix_blockchain.dat");
-                LOG_INFO(Radix::Logger::main(), "✅ Transaccion guardada en mempool local");
+                blockchain.saveChain("svx_blockchain.dat");
+                LOG_INFO(Soverx::Logger::main(), "✅ Transaccion guardada en mempool local");
 
                 // Broadcast to network
-                LOG_INFO(Radix::Logger::main(), "📡 Propagando transaccion a la red...");
-                Radix::Node node(blockchain);
+                LOG_INFO(Soverx::Logger::main(), "📡 Propagando transaccion a la red...");
+                Soverx::Node node(blockchain);
                 node.discoverPeers(); // Connect to seeds/peers
                 
                 // Give it a moment to connect
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 
                 node.broadcastTransaction(tx);
-                LOG_INFO(Radix::Logger::main(), "✅ Transaccion enviada a los peers");
+                LOG_INFO(Soverx::Logger::main(), "✅ Transaccion enviada a los peers");
                 
                 // Give it a moment to send before exiting
                 std::this_thread::sleep_for(std::chrono::seconds(1));
 
             } else {
-                LOG_ERROR(Radix::Logger::main(), "❌ La transaccion fue rechazada por la blockchain (posible doble gasto o invalida)");
+                LOG_ERROR(Soverx::Logger::main(), "❌ La transaccion fue rechazada por la blockchain (posible doble gasto o invalida)");
                 return 1;
             }
         } catch (const std::exception& e) {
-            LOG_ERROR(Radix::Logger::main(), "❌ Error enviando transaccion: {}", e.what());
+            LOG_ERROR(Soverx::Logger::main(), "❌ Error enviando transaccion: {}", e.what());
             return 1;
         }
         return 0;
@@ -211,12 +211,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Start Node
-    Radix::Node node(blockchain);
+    Soverx::Node node(blockchain);
     
     // Start RPC Server if requested
-    std::unique_ptr<Radix::RpcServer> rpcServer;
+    std::unique_ptr<Soverx::RpcServer> rpcServer;
     if (config.rpc_enabled) {
-        rpcServer = std::make_unique<Radix::RpcServer>(blockchain, node);
+        rpcServer = std::make_unique<Soverx::RpcServer>(blockchain, node);
         rpcServer->configure(
             config.rpc_auth_required,
             config.rpc_keys_file,
@@ -225,11 +225,11 @@ int main(int argc, char* argv[]) {
             config.rpc_ip_whitelist
         );
         rpcServer->start(config.rpc_port);
-        LOG_INFO(Radix::Logger::main(), "✅ RPC Server started on port {}", config.rpc_port);
+        LOG_INFO(Soverx::Logger::main(), "✅ RPC Server started on port {}", config.rpc_port);
     }
 
     if (config.server_mode) {
-        LOG_INFO(Radix::Logger::main(), "Iniciando Radix Node...");
+        LOG_INFO(Soverx::Logger::main(), "Iniciando Soverx Node...");
         
         // Start server in a separate thread so we can mine in main thread if needed
         std::thread serverThread([&node, &config]() {
@@ -245,16 +245,16 @@ int main(int argc, char* argv[]) {
             if (colonPos != std::string::npos) {
                 std::string ip = config.connect_peer.substr(0, colonPos);
                 int p = std::stoi(config.connect_peer.substr(colonPos + 1));
-                LOG_INFO(Radix::Logger::main(), "Conectando a peer {}:{}...", ip, p);
+                LOG_INFO(Soverx::Logger::main(), "Conectando a peer {}:{}...", ip, p);
                 node.connectToPeer(ip, p);
             } else {
-                LOG_ERROR(Radix::Logger::main(), "Formato de peer invalido. Use ip:port");
+                LOG_ERROR(Soverx::Logger::main(), "Formato de peer invalido. Use ip:port");
             }
         }
 
         if (config.mining_enabled) {
-            LOG_INFO(Radix::Logger::main(), "Mineria habilitada. Minando para: {}", config.miner_address);
-            LOG_INFO(Radix::Logger::main(), "Nodo corriendo.  Presione Ctrl+C para salir");
+            LOG_INFO(Soverx::Logger::main(), "Mineria habilitada. Minando para: {}", config.miner_address);
+            LOG_INFO(Soverx::Logger::main(), "Nodo corriendo.  Presione Ctrl+C para salir");
             
             // Main mining loop
             while (g_running) {
@@ -262,36 +262,36 @@ int main(int argc, char* argv[]) {
                 if (!g_running) break;
 
                 // Broadcast new block
-                Radix::Block newBlock = blockchain.getLatestBlock();
+                Soverx::Block newBlock = blockchain.getLatestBlock();
                 node.broadcastBlock(newBlock);
                 
                 std::this_thread::sleep_for(std::chrono::seconds(1)); // Throttle
             }
         } else {
-            LOG_INFO(Radix::Logger::main(), "Nodo corriendo en modo solo servidor. Presione Ctrl+C para salir");
+            LOG_INFO(Soverx::Logger::main(), "Nodo corriendo en modo solo servidor. Presione Ctrl+C para salir");
             while (g_running) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
         
-        LOG_INFO(Radix::Logger::main(), "Guardando blockchain y cerrando...");
-        blockchain.saveChain("radix_blockchain.dat");
+        LOG_INFO(Soverx::Logger::main(), "Guardando blockchain y cerrando...");
+        blockchain.saveChain("svx_blockchain.dat");
         node.stop();
         if (rpcServer) rpcServer->stop();
     } else if (config.rpc_enabled) { // If only RPC is enabled, but not serverMode
-        LOG_INFO(Radix::Logger::main(), "RPC Server corriendo. Presione Ctrl+C para salir");
+        LOG_INFO(Soverx::Logger::main(), "RPC Server corriendo. Presione Ctrl+C para salir");
         while (g_running) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        LOG_INFO(Radix::Logger::main(), "Guardando blockchain y cerrando...");
-        blockchain.saveChain("radix_blockchain.dat");
+        LOG_INFO(Soverx::Logger::main(), "Guardando blockchain y cerrando...");
+        blockchain.saveChain("svx_blockchain.dat");
         if (rpcServer) rpcServer->stop();
     } else { // This case should ideally not be reached if the initial check is correct
-        LOG_INFO(Radix::Logger::main(), "Modo no especificado. Saliendo");
+        LOG_INFO(Soverx::Logger::main(), "Modo no especificado. Saliendo");
     }
     
     // Shutdown logger
-    Radix::Logger::shutdown();
+    Soverx::Logger::shutdown();
 
     return 0;
 }

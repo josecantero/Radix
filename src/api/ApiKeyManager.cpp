@@ -9,7 +9,7 @@
 
 using json = nlohmann::json;
 
-namespace Radix {
+namespace Soverx {
 
 std::string ApiKeyManager::generateApiKey() {
     std::random_device rd;
@@ -163,4 +163,4 @@ bool ApiKeyManager::loadKeys(const std::string& keysFile, std::unordered_map<std
     }
 }
 
-} // namespace Radix
+} // namespace Soverx

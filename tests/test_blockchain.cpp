@@ -4,7 +4,7 @@
 
 class BlockchainTest : public ::testing::Test {
 protected:
-    Radix::RandomXContext rxContext;
+    Soverx::RandomXContext rxContext;
     
     void SetUp() override {
         OSSL_PROVIDER_load(NULL, "default");
@@ -14,13 +14,13 @@ protected:
 
 // Test: Blockchain initialization with genesis block
 TEST_F(BlockchainTest, Initialization) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Should have exactly one block (genesis)
     EXPECT_EQ(bc.getChainSize(), 1);
     
     // Genesis block should have version 1 (not 0)
-    const Radix::Block& genesis = bc.getLatestBlock();
+    const Soverx::Block& genesis = bc.getLatestBlock();
     EXPECT_EQ(genesis.version, 1); // Genesis is version 1
     // prevHash is 64-character hex string of zeros, not just "0"
     EXPECT_EQ(genesis.prevHash.length(), 64);
@@ -29,7 +29,7 @@ TEST_F(BlockchainTest, Initialization) {
 
 // Test: Get block hash by index
 TEST_F(BlockchainTest, GetBlockHash) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Genesis block at index 0
     std::string genesisHash = bc.getBlockHash(0);
@@ -43,7 +43,7 @@ TEST_F(BlockchainTest, GetBlockHash) {
 
 // Test: Get block height by hash
 TEST_F(BlockchainTest, GetBlockHeight) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     std::string genesisHash = bc.getLatestBlock().hash;
     
@@ -58,9 +58,9 @@ TEST_F(BlockchainTest, GetBlockHeight) {
 
 // Test: Balance calculation - initial state
 TEST_F(BlockchainTest, InitialBalanceIsZero) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
-    std::string testAddress = "radix_test_address";
+    std::string testAddress = "svx_test_address";
     uint64_t balance = bc.getBalanceOfAddress(testAddress);
     
     EXPECT_EQ(balance, 0);
@@ -68,9 +68,9 @@ TEST_F(BlockchainTest, InitialBalanceIsZero) {
 
 // Test: Balance after mining
 TEST_F(BlockchainTest, BalanceAfterMining) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
-    std::string minerAddr = "radix_miner";
+    std::string minerAddr = "svx_miner";
     
     // Mine a block (this will take a few seconds due to PoW)
     std::atomic<bool> running(true);
@@ -86,14 +86,14 @@ TEST_F(BlockchainTest, BalanceAfterMining) {
 
 // Test: Chain validation - valid chain
 TEST_F(BlockchainTest, ChainValidationValid) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Genesis block should be valid
     EXPECT_TRUE(bc.isChainValid());
     
     // Mine another block
     std::atomic<bool> running(true);
-    bc.minePendingTransactions("radix_miner", running);
+    bc.minePendingTransactions("svx_miner", running);
     
     // Chain should still be valid
     EXPECT_TRUE(bc.isChainValid());
@@ -101,17 +101,17 @@ TEST_F(BlockchainTest, ChainValidationValid) {
 
 // Test: Add transaction to pending
 TEST_F(BlockchainTest, AddTransactionBasic) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Mine initial block to create UTXO
     std::atomic<bool> running(true);
-    bc.minePendingTransactions("radix_miner", running);
+    bc.minePendingTransactions("svx_miner", running);
     
     // Note: Creating a valid transaction requires complex UTXO setup
     // For this basic test, we just verify the method exists and handles
     // invalid transactions correctly
     
-    Radix::Transaction invalidTx("radix_recipient", 1000000000ULL, false);
+    Soverx::Transaction invalidTx("svx_recipient", 1000000000ULL, false);
     // This should fail because it's not a coinbase but has no inputs
     bool added = bc.addTransaction(invalidTx);
     
@@ -121,12 +121,12 @@ TEST_F(BlockchainTest, AddTransactionBasic) {
 
 // Test: Get blocks from height
 TEST_F(BlockchainTest, GetBlocksFromHeight) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Mine a few blocks
     std::atomic<bool> running(true);
-    bc.minePendingTransactions("radix_miner1", running);
-    bc.minePendingTransactions("radix_miner2", running);
+    bc.minePendingTransactions("svx_miner1", running);
+    bc.minePendingTransactions("svx_miner2", running);
     
     // Should have 3 blocks total (genesis + 2 mined)
     EXPECT_EQ(bc.getChainSize(), 3);
@@ -143,12 +143,12 @@ TEST_F(BlockchainTest, GetBlocksFromHeight) {
 
 // Test: Get blocks with max count limit
 TEST_F(BlockchainTest, GetBlocksWithLimit) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Mine 2 blocks
     std::atomic<bool> running(true);
-    bc.minePendingTransactions("radix_miner1", running);
-    bc.minePendingTransactions("radix_miner2", running);
+    bc.minePendingTransactions("svx_miner1", running);
+    bc.minePendingTransactions("svx_miner2", running);
     
     // Request only 1 block starting from index 0
     auto blocks = bc.getBlocksFromHeight(0, 1);
@@ -160,21 +160,21 @@ TEST_F(BlockchainTest, GetBlocksWithLimit) {
 
 // Test: Get block at specific height
 TEST_F(BlockchainTest, GetBlockAtHeight) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Genesis block at height 0
-    const Radix::Block* genesis = bc.getBlockAtHeight(0);
+    const Soverx::Block* genesis = bc.getBlockAtHeight(0);
     ASSERT_NE(genesis, nullptr);
     EXPECT_EQ(genesis->version, 1); // Genesis is version 1
     
     // Height beyond chain should return nullptr
-    const Radix::Block* invalid = bc.getBlockAtHeight(999);
+    const Soverx::Block* invalid = bc.getBlockAtHeight(999);
     EXPECT_EQ(invalid, nullptr);
 }
 
 // Test: UTXO set access
 TEST_F(BlockchainTest, UTXOSetAccess) {
-    Radix::Blockchain bc(1, rxContext);
+    Soverx::Blockchain bc(1, rxContext);
     
     // Initially has genesis coinbase UTXO
     const auto& utxoSet = bc.getUtxoSet();
@@ -183,7 +183,7 @@ TEST_F(BlockchainTest, UTXOSetAccess) {
     
     // After mining, should have UTXO for miner
     std::atomic<bool> running(true);
-    bc.minePendingTransactions("radix_miner", running);
+    bc.minePendingTransactions("svx_miner", running);
     
     const auto& utxoSetAfterMining = bc.getUtxoSet();
     EXPECT_GT(utxoSetAfterMining.size(), 0);
@@ -195,9 +195,9 @@ TEST_F(BlockchainTest, BlockchainPersistence) {
     
     // Create blockchain and mine a block
     {
-        Radix::Blockchain bc(1, rxContext);
+        Soverx::Blockchain bc(1, rxContext);
         std::atomic<bool> running(true);
-        bc.minePendingTransactions("radix_miner", running);
+        bc.minePendingTransactions("svx_miner", running);
         
         // Save to file
         bc.saveChain(testFile);
@@ -205,7 +205,7 @@ TEST_F(BlockchainTest, BlockchainPersistence) {
     
     // Load in new blockchain
     {
-        Radix::Blockchain bc2(1, rxContext);
+        Soverx::Blockchain bc2(1, rxContext);
         bool loaded = bc2.loadChain(testFile);
         
         EXPECT_TRUE(loaded);

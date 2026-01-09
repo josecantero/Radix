@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace Radix {
+namespace Soverx {
 namespace Base58 {
 
 // Codifica un vector de bytes a una cadena Base58
@@ -15,6 +15,6 @@ std::string encode(const std::vector<unsigned char>& data);
 std::vector<unsigned char> decode(const std::string& data);
 
 } // namespace Base58
-} // namespace Radix
+} // namespace Soverx
 
 #endif // BASE58_H

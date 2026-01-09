@@ -5,7 +5,7 @@
 
 class BlockTest : public ::testing::Test {
 protected:
-    Radix::RandomXContext rxContext;
+    Soverx::RandomXContext rxContext;
     
     void SetUp() override {
         OSSL_PROVIDER_load(NULL, "default");
@@ -15,8 +15,8 @@ protected:
 
 // Test: Genesis block creation
 TEST_F(BlockTest, GenesisBlockCreation) {
-    std::vector<Radix::Transaction> txs;
-    Radix::Block genesis(0, "0", txs, 1, rxContext);
+    std::vector<Soverx::Transaction> txs;
+    Soverx::Block genesis(0, "0", txs, 1, rxContext);
     
     // Hash needs to be calculated explicitly
     genesis.hash = genesis.calculateHash();
@@ -29,10 +29,10 @@ TEST_F(BlockTest, GenesisBlockCreation) {
 
 // Test: Block with transactions
 TEST_F(BlockTest, BlockWithTransactions) {
-    Radix::Transaction coinbase("radix_miner", 5000000000ULL, true);
-    std::vector<Radix::Transaction> txs = {coinbase};
+    Soverx::Transaction coinbase("svx_miner", 5000000000ULL, true);
+    std::vector<Soverx::Transaction> txs = {coinbase};
     
-    Radix::Block block(1, "prev_hash", txs, 1, rxContext);
+    Soverx::Block block(1, "prev_hash", txs, 1, rxContext);
     
     EXPECT_EQ(block.version, 1);
     EXPECT_EQ(block.transactions.size(), 1);
@@ -41,8 +41,8 @@ TEST_F(BlockTest, BlockWithTransactions) {
 
 // Test: Block hash calculation consistency
 TEST_F(BlockTest, HashCalculationConsistency) {
-    std::vector<Radix::Transaction> txs;
-    Radix::Block block(1, "prev_hash", txs, 1, rxContext);
+    std::vector<Soverx::Transaction> txs;
+    Soverx::Block block(1, "prev_hash", txs, 1, rxContext);
     
     // Hash should be deterministic
     std::string hash1 = block.calculateHash();
@@ -57,11 +57,11 @@ TEST_F(BlockTest, HashCalculationConsistency) {
 
 // Test: Different blocks have different hashes
 TEST_F(BlockTest, DifferentBlocksDifferentHashes) {
-    std::vector<Radix::Transaction> txs1;
-    std::vector<Radix::Transaction> txs2;
+    std::vector<Soverx::Transaction> txs1;
+    std::vector<Soverx::Transaction> txs2;
     
-    Radix::Block block1(1, "prev_hash_1", txs1, 1, rxContext);
-    Radix::Block block2(2, "prev_hash_2", txs2, 1, rxContext);
+    Soverx::Block block1(1, "prev_hash_1", txs1, 1, rxContext);
+    Soverx::Block block2(2, "prev_hash_2", txs2, 1, rxContext);
     
     // Calculate hashes
     std::string hash1 = block1.calculateHash();
@@ -72,8 +72,8 @@ TEST_F(BlockTest, DifferentBlocksDifferentHashes) {
 
 // Test: Block mining (difficulty 1) - SLOW TEST, marked as such
 TEST_F(BlockTest, MiningDifficulty1) {
-    std::vector<Radix::Transaction> txs;
-    Radix::Block block(1, "prev_hash", txs, 1, rxContext);
+    std::vector<Soverx::Transaction> txs;
+    Soverx::Block block(1, "prev_hash", txs, 1, rxContext);
     
     // Record initial state
     uint64_t initialNonce = block.nonce;
@@ -94,8 +94,8 @@ TEST_F(BlockTest, MiningDifficulty1) {
 
 // Test: Mining can be stopped
 TEST_F(BlockTest, MiningCanBeInterrupted) {
-    std::vector<Radix::Transaction> txs;
-    Radix::Block block(100, "prev_hash", txs, 5, rxContext); // High difficulty
+    std::vector<Soverx::Transaction> txs;
+    Soverx::Block block(100, "prev_hash", txs, 5, rxContext); // High difficulty
     
     std::atomic<bool> running(false); // Immediately stop
     block.mineBlock(5, running); // Use mineBlock with difficulty parameter
@@ -106,13 +106,13 @@ TEST_F(BlockTest, MiningCanBeInterrupted) {
 
 // Test: Block validation with valid hash
 TEST_F(BlockTest, BlockValidationValid) {
-    std::vector<Radix::Transaction> txs;
-    Radix::Block block(1, "prev_hash", txs, 1, rxContext);
+    std::vector<Soverx::Transaction> txs;
+    Soverx::Block block(1, "prev_hash", txs, 1, rxContext);
     
     std::atomic<bool> running(true);
     block.mineBlock(1, running);
     
-    std::map<std::string, Radix::TransactionOutput> utxoSet;
+    std::map<std::string, Soverx::TransactionOutput> utxoSet;
     
     // Mined block should be valid
     EXPECT_TRUE(block.isValid(rxContext, utxoSet));
@@ -120,8 +120,8 @@ TEST_F(BlockTest, BlockValidationValid) {
 
 // Test: Block validation with tampered hash
 TEST_F(BlockTest, BlockValidationInvalid) {
-    std::vector<Radix::Transaction> txs;
-    Radix::Block block(1, "prev_hash", txs, 1, rxContext);
+    std::vector<Soverx::Transaction> txs;
+    Soverx::Block block(1, "prev_hash", txs, 1, rxContext);
     
     std::atomic<bool> running(true);
     block.mineBlock(1, running);
@@ -129,7 +129,7 @@ TEST_F(BlockTest, BlockValidationInvalid) {
     // Tamper with hash
     block.hash = "invalid_hash_12345";
     
-    std::map<std::string, Radix::TransactionOutput> utxoSet;
+    std::map<std::string, Soverx::TransactionOutput> utxoSet;
     
     // Should be invalid
     EXPECT_FALSE(block.isValid(rxContext, utxoSet));
@@ -137,10 +137,10 @@ TEST_F(BlockTest, BlockValidationInvalid) {
 
 // Test: Block serialization and deserialization
 TEST_F(BlockTest, Serialization) {
-    Radix::Transaction coinbase("radix_miner", 5000000000ULL, true);
-    std::vector<Radix::Transaction> txs = {coinbase};
+    Soverx::Transaction coinbase("svx_miner", 5000000000ULL, true);
+    std::vector<Soverx::Transaction> txs = {coinbase};
     
-    Radix::Block original(5, "prev_hash_abc", txs, 1, rxContext);
+    Soverx::Block original(5, "prev_hash_abc", txs, 1, rxContext);
     original.nonce = 12345;
     original.timestamp = 1638360000;
     original.hash = original.calculateHash();
@@ -150,7 +150,7 @@ TEST_F(BlockTest, Serialization) {
     original.serialize(ss);
     
     // Deserialize into new block
-    Radix::Block deserialized(0, "", {}, 0, rxContext);
+    Soverx::Block deserialized(0, "", {}, 0, rxContext);
     deserialized.deserialize(ss);
     
     // Verify all fields match
@@ -166,16 +166,16 @@ TEST_F(BlockTest, Serialization) {
 
 // Test: Block merkle root calculation
 TEST_F(BlockTest, MerkleRootCalculation) {
-    Radix::Transaction tx1("radix_addr1", 1000000000ULL, true);
-    Radix::Transaction tx2("radix_addr2", 2000000000ULL, true);
-    std::vector<Radix::Transaction> txs = {tx1, tx2};
+    Soverx::Transaction tx1("svx_addr1", 1000000000ULL, true);
+    Soverx::Transaction tx2("svx_addr2", 2000000000ULL, true);
+    std::vector<Soverx::Transaction> txs = {tx1, tx2};
     
-    Radix::Block block(1, "prev", txs, 1, rxContext);
+    Soverx::Block block(1, "prev", txs, 1, rxContext);
     
     // Merkle root should be calculated
     EXPECT_GT(block.merkleRoot.length(), 0);
     
     // Should be deterministic
-    Radix::Block block2(1, "prev", txs, 1, rxContext);
+    Soverx::Block block2(1, "prev", txs, 1, rxContext);
     EXPECT_EQ(block.merkleRoot, block2.merkleRoot);
 }

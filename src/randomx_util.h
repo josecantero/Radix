@@ -7,12 +7,12 @@
 #include <array>
 #include <cstdint> // Necesario para uint8_t
 
-namespace Radix {
+namespace Soverx {
 
 // Tipo para representar el hash de 32 bytes (RandomXHash)
 using RandomXHash = std::array<uint8_t, 32>; // Cambiado a uint8_t para consistencia
 
-// Tipo para representar una dirección Radix
+// Tipo para representar una dirección Soverx
 using Address = std::string;
 
 // Clase para encapsular el contexto de RandomX
@@ -44,6 +44,6 @@ std::string toHexString(const std::vector<uint8_t>& bytes);
 void fromHexString(const std::string& hexString, RandomXHash& hash);
 void fromHexString(const std::string& hexString, std::vector<uint8_t>& bytes);
 
-} // namespace Radix
+} // namespace Soverx
 
 #endif // RANDOM_X_UTIL_H

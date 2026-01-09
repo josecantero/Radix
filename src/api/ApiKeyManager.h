@@ -1,5 +1,5 @@
-#ifndef RADIX_API_KEY_MANAGER_H
-#define RADIX_API_KEY_MANAGER_H
+#ifndef SOVERX_API_KEY_MANAGER_H
+#define SOVERX_API_KEY_MANAGER_H
 
 #include <string>
 #include <vector>
@@ -7,7 +7,7 @@
 #include <mutex>
 #include "../config.h"
 
-namespace Radix {
+namespace Soverx {
 
 struct ApiKeyInfo {
     std::string key;
@@ -52,6 +52,6 @@ public:
     static bool loadKeys(const std::string& keysFile, std::unordered_map<std::string, ApiKeyInfo>& apiKeys);
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_API_KEY_MANAGER_H
+#endif // SOVERX_API_KEY_MANAGER_H

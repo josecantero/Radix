@@ -1,6 +1,6 @@
 // block.cpp
 #include "block.h"
-#include "crypto.h" // Para Radix::SHA256
+#include "crypto.h" // Para Soverx::SHA256
 #include "randomx_util.h" // Para toHexString y RandomXContext
 #include "base58.h" // Para Base58::encode y decode (si se usan en otro lugar, la inclusión ya está)
 #include "persistence_util.h" // Para serialización binaria
@@ -11,7 +11,7 @@
 #include <iomanip> // Para std::hex, std::setfill, std::setw
 #include <limits>  // Para std::numeric_limits
 
-namespace Radix {
+namespace Soverx {
 
 // --------------------------------------------------------------------------------
 // Helper estático para el constructor por defecto (Manejo de Referencia)
@@ -171,8 +171,8 @@ bool Block::isValid(RandomXContext& rxContext_ref, const std::map<std::string, T
 // Calcula la raíz de Merkle para las transacciones del bloque
 std::string Block::calculateMerkleRoot() const {
     if (transactions.empty()) {
-        // ¡CORRECCIÓN 3 AQUÍ! Usar Radix::SHA256 directamente
-        return toHexString(Radix::SHA256(""));
+        // ¡CORRECCIÓN 3 AQUÍ! Usar Soverx::SHA256 directamente
+        return toHexString(Soverx::SHA256(""));
     }
 
     std::vector<std::string> txHashes;
@@ -196,8 +196,8 @@ std::string Block::buildMerkleTree(const std::vector<std::string>& hashes) const
     for (size_t i = 0; i < hashes.size(); i += 2) {
         std::string left = hashes[i];
         std::string right = (i + 1 < hashes.size()) ? hashes[i+1] : left; // Duplicar el último si es impar
-        // ¡CORRECCIÓN 4 AQUÍ! Usar Radix::SHA256 directamente y convertir a hex string
-        nextLevelHashes.push_back(toHexString(Radix::SHA256(left + right)));
+        // ¡CORRECCIÓN 4 AQUÍ! Usar Soverx::SHA256 directamente y convertir a hex string
+        nextLevelHashes.push_back(toHexString(Soverx::SHA256(left + right)));
     }
     return buildMerkleTree(nextLevelHashes);
 }
@@ -244,4 +244,4 @@ void Block::deserialize(std::istream& fs) {
     // que ignore esta referencia y use el RandomXContext activo de la cadena.
 }
 
-} // namespace Radix
+} // namespace Soverx

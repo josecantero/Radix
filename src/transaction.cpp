@@ -1,6 +1,6 @@
 // transaction.cpp
 #include "transaction.h"
-#include "crypto.h" // Para Radix::KeyPair, Radix::SHA256, Radix::toHexString
+#include "crypto.h" // Para Soverx::KeyPair, Soverx::SHA256, Soverx::toHexString
 #include "randomx_util.h" // Para toHexString
 #include "money_util.h" // Para formatRadsToRDX
 #include "persistence_util.h" // Para serialización binaria
@@ -16,7 +16,7 @@
 #include <new>       // Para std::nothrow_t y sobrecargas de operator new
 #include <cstddef>   // Para std::streamsize y otros tipos de definición estándar
 
-namespace Radix {
+namespace Soverx {
 
 // Constructor para transacciones normales
 Transaction::Transaction(const std::vector<TransactionInput>& inputs, const std::vector<TransactionOutput>& outputs)
@@ -65,7 +65,7 @@ std::string Transaction::calculateRawHash() const {
 
 // Calcula el hash final de la transacción
 std::string Transaction::calculateHash() const {
-    return toHexString(Radix::SHA256(calculateRawHash()));
+    return toHexString(Soverx::SHA256(calculateRawHash()));
 }
 
 // Firma la transacción con la clave privada del remitente
@@ -76,7 +76,7 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
 
     // 1. Obtener el hash crudo de la transacción (sin la firma)
     std::string rawHash = calculateRawHash();
-    Radix::RandomXHash messageHash = Radix::SHA256(rawHash);
+    Soverx::RandomXHash messageHash = Soverx::SHA256(rawHash);
 
     // 2. Obtener el total de entradas y validar propiedad/existencia
     uint64_t totalInputAmount = 0;
@@ -113,8 +113,8 @@ void Transaction::sign(const PrivateKey& senderPrivateKey, const PublicKey& send
     
     // 5. Validar que la salida total no exceda la entrada total
     if (totalOutputAmount > totalInputAmount) {
-         throw std::runtime_error("Error de firma: La salida total (" + Radix::formatRadsToRDX(totalOutputAmount) + 
-                                  ") excede la entrada total (" + Radix::formatRadsToRDX(totalInputAmount) + "). Transacción inválida.");
+         throw std::runtime_error("Error de firma: La salida total (" + Soverx::formatRadsToRDX(totalOutputAmount) + 
+                                  ") excede la entrada total (" + Soverx::formatRadsToRDX(totalInputAmount) + "). Transacción inválida.");
     }
     
     // 6. Generar la firma
@@ -187,7 +187,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
 
         // Validación de la Firma
         std::string rawHash = calculateRawHash();
-        Radix::RandomXHash messageHash = Radix::SHA256(rawHash);
+        Soverx::RandomXHash messageHash = Soverx::SHA256(rawHash);
         
         if (input.pubKey.empty() || input.signature.empty() || utxo.recipientAddress != KeyPair::deriveAddress(input.pubKey)) {
             LOG_ERROR(Logger::blockchain(), "Error de validacion: Clave publica o firma faltante/invalida para la UTXO: {}", utxoKey);
@@ -214,7 +214,7 @@ bool Transaction::isValid(const std::map<std::string, TransactionOutput>& utxoSe
     // La salida total no puede exceder la entrada total (la diferencia es la tarifa de transacción)
     if (totalOutputAmount > totalInputAmount) {
         LOG_ERROR(Logger::blockchain(), "Error de validacion: Salida total ({}) excede la entrada total ({}). Sobregiro detectado", 
-                     Radix::formatRadsToRDX(totalOutputAmount), Radix::formatRadsToRDX(totalInputAmount));
+                     Soverx::formatRadsToRDX(totalOutputAmount), Soverx::formatRadsToRDX(totalInputAmount));
         return false;
     }
     
@@ -241,7 +241,7 @@ std::string Transaction::toString(bool indent) const {
 
     ss << prefix << "Outputs (" << outputs.size() << "):\n";
     for (const auto& output : outputs) {
-        ss << prefix << "  Amount: " << Radix::formatRadsToRDX(output.amount) << " RDX\n"
+        ss << prefix << "  Amount: " << Soverx::formatRadsToRDX(output.amount) << " RDX\n"
            << prefix << "  Recipient: " << output.recipientAddress << "\n";
     }
 
@@ -328,4 +328,4 @@ void Transaction::deserialize(std::istream& fs) {
     }
 }
 
-} // namespace Radix
+} // namespace Soverx

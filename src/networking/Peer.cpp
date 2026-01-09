@@ -6,7 +6,7 @@
 #include <cstring>
 #include <vector>
 
-namespace Radix {
+namespace Soverx {
 
 Peer::Peer(int socketFd, struct sockaddr_in address) 
     : socketFd(socketFd), address(address), connected(true), handshaked(false) {}
@@ -123,4 +123,4 @@ bool Peer::readMessage(Message& msg) {
     return true;
 }
 
-} // namespace Radix
+} // namespace Soverx

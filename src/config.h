@@ -1,18 +1,18 @@
-#ifndef RADIX_CONFIG_H
-#define RADIX_CONFIG_H
+#ifndef SOVERX_CONFIG_H
+#define SOVERX_CONFIG_H
 
 #include <string>
 #include <vector>
 
-namespace Radix {
+namespace Soverx {
 
 /**
- * @brief Configuration structure for Radix Blockchain
+ * @brief Configuration structure for Soverx Blockchain
  * 
- * Contains all configurable parameters for running a Radix node.
+ * Contains all configurable parameters for running a Soverx node.
  * Values can be loaded from JSON config file and overridden by CLI arguments.
  */
-struct RadixConfig {
+struct SoverxConfig {
     // Network settings
     int port = 8080;
     std::string connect_peer = "";
@@ -20,7 +20,7 @@ struct RadixConfig {
     
     // Mining settings
     bool mining_enabled = false;
-    std::string miner_address = "radix_miner_default";
+    std::string miner_address = "svx_miner_default";
     int mining_threads = 1;
     
     // RPC settings
@@ -55,27 +55,27 @@ public:
     /**
      * @brief Load configuration from JSON file
      * @param filepath Path to JSON config file
-     * @return RadixConfig with values from file (defaults for missing keys)
+     * @return SoverxConfig with values from file (defaults for missing keys)
      * @throws std::runtime_error if file exists but is invalid JSON
      */
-    static RadixConfig loadFromFile(const std::string& filepath);
+    static SoverxConfig loadFromFile(const std::string& filepath);
     
     /**
      * @brief Override config with CLI arguments
      * @param argc Argument count
      * @param argv Argument values
      * @param defaults Base config to override (from file or default)
-     * @return RadixConfig with CLI overrides applied
+     * @return SoverxConfig with CLI overrides applied
      */
-    static RadixConfig loadFromArgs(int argc, char* argv[], const RadixConfig& defaults);
+    static SoverxConfig loadFromArgs(int argc, char* argv[], const SoverxConfig& defaults);
     
     /**
      * @brief Get default configuration
-     * @return RadixConfig with all default values
+     * @return SoverxConfig with all default values
      */
-    static RadixConfig getDefaults();
+    static SoverxConfig getDefaults();
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_CONFIG_H
+#endif // SOVERX_CONFIG_H

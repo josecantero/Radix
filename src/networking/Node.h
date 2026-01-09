@@ -1,5 +1,5 @@
-#ifndef RADIX_NODE_H
-#define RADIX_NODE_H
+#ifndef SOVERX_NODE_H
+#define SOVERX_NODE_H
 
 #include <vector>
 #include <thread>
@@ -12,7 +12,7 @@
 #include "Peer.h"
 #include "../blockchain.h"
 
-namespace Radix {
+namespace Soverx {
 
 class Node {
 public:
@@ -142,6 +142,6 @@ private:
 
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_NODE_H
+#endif // SOVERX_NODE_H

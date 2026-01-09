@@ -3,7 +3,7 @@
 #include <sstream> 
 #include <iomanip> 
 
-namespace Radix {
+namespace Soverx {
 
 // Implementación de la función auxiliar para convertir uint64_t (rads) a string con decimales (RDX)
 std::string formatRadsToRDX(uint64_t rads) {
@@ -33,4 +33,4 @@ std::string formatRadsToRDX(uint64_t rads) {
     return result;
 }
 
-} // namespace Radix
+} // namespace Soverx

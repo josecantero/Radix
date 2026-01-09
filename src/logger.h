@@ -1,5 +1,5 @@
-#ifndef RADIX_LOGGER_H
-#define RADIX_LOGGER_H
+#ifndef SOVERX_LOGGER_H
+#define SOVERX_LOGGER_H
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace Radix {
+namespace Soverx {
 
 /**
  * @brief Centralized logger utility using spdlog
@@ -84,6 +84,6 @@ private:
 #define LOG_ERROR(logger, ...) logger->error(__VA_ARGS__)
 #define LOG_CRITICAL(logger, ...) logger->critical(__VA_ARGS__)
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_LOGGER_H
+#endif // SOVERX_LOGGER_H

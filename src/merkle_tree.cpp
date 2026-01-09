@@ -6,7 +6,7 @@
 #include <cstring> // Para memcpy
 #include <openssl/sha.h> // Para SHA256 y SHA256_DIGEST_LENGTH
 
-namespace Radix {
+namespace Soverx {
 
 // Constructor
 // NOTA IMPORTANTE: El constructor de MerkleTree necesita un RandomXContext para hashear.
@@ -63,7 +63,7 @@ MerkleTree::MerkleTree(const std::vector<RandomXHash>& leaves) {
 
 // Función auxiliar para calcular el hash de un par de nodos en el árbol Merkle.
 // Nota: Esta función asume que se le pasa un RandomXContext válido.
-RandomXHash MerkleTree::hashPair(const RandomXHash& hash1, const RandomXHash& hash2, Radix::RandomXContext& rxContext) {
+RandomXHash MerkleTree::hashPair(const RandomXHash& hash1, const RandomXHash& hash2, Soverx::RandomXContext& rxContext) {
     std::vector<uint8_t> combinedHashes(hash1.size() + hash2.size());
     memcpy(combinedHashes.data(), hash1.data(), hash1.size());
     memcpy(combinedHashes.data() + hash1.size(), hash2.data(), hash2.size());
@@ -83,4 +83,4 @@ std::string MerkleTree::toString() const {
     return ss.str();
 }
 
-} // namespace Radix
+} // namespace Soverx

@@ -1,5 +1,5 @@
-#ifndef WALLET_H
-#define WALLET_H
+#ifndef SOVERX_WALLET_H
+#define SOVERX_WALLET_H
 
 #include "crypto.h"
 #include "transaction.h"
@@ -7,7 +7,7 @@
 #include <vector>
 #include <map>
 
-namespace Radix {
+namespace Soverx {
 
 class Wallet {
 public:
@@ -32,6 +32,6 @@ private:
     KeyPair keyPair;
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // WALLET_H
+#endif // SOVERX_WALLET_H

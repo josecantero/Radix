@@ -2,7 +2,7 @@
 #include <cstring>
 #include <iostream>
 
-namespace Radix {
+namespace Soverx {
 namespace Persistence {
 
 // Implementación de Escribir std::string
@@ -58,4 +58,4 @@ std::vector<uint8_t> readVector(std::istream& fs) {
 }
 
 } // namespace Persistence
-} // namespace Radix
+} // namespace Soverx

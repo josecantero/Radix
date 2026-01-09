@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <iostream>
 
-namespace Radix {
+namespace Soverx {
 
 Wallet::Wallet() {
     // KeyPair constructor generates random keys
@@ -91,4 +91,4 @@ Transaction Wallet::createTransaction(const std::string& recipient, uint64_t amo
     return tx;
 }
 
-} // namespace Radix
+} // namespace Soverx

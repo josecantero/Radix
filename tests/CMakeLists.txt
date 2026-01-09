@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Test executable
-add_executable(radix_tests
+add_executable(soverx_tests
     test_main.cpp
     test_crypto.cpp
     test_transaction.cpp
@@ -11,19 +11,19 @@ add_executable(radix_tests
     ../src/api/RateLimiter.cpp
 )
 
-# Link against radix_core library and gtest
-target_link_libraries(radix_tests
-    radix_core
+# Link against soverx_core library and gtest
+target_link_libraries(soverx_tests
+    soverx_core
     GTest::gtest_main
     GTest::gmock
 )
 
 # Include directories
-target_include_directories(radix_tests PRIVATE
+target_include_directories(soverx_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${RANDOMX_INCLUDE_DIR}
 )
 
 # Register tests with CTest
 include(GoogleTest)
-gtest_discover_tests(radix_tests)
+gtest_discover_tests(soverx_tests)

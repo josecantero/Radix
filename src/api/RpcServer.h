@@ -1,5 +1,5 @@
-#ifndef RADIX_RPC_SERVER_H
-#define RADIX_RPC_SERVER_H
+#ifndef SOVERX_RPC_SERVER_H
+#define SOVERX_RPC_SERVER_H
 
 #include "../blockchain.h"
 #include "../networking/Node.h"
@@ -12,7 +12,7 @@
 #include <mutex>
 #include <memory>
 
-namespace Radix {
+namespace Soverx {
 
 class RpcServer {
 public:
@@ -76,6 +76,6 @@ private:
     std::mutex rateLimitersMutex;
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_RPC_SERVER_H
+#endif // SOVERX_RPC_SERVER_H

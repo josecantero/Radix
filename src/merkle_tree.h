@@ -8,7 +8,7 @@
 
 #include "randomx_util.h" // Para RandomXHash y RandomXContext
 
-namespace Radix {
+namespace Soverx {
 
 class MerkleTree {
 public:
@@ -30,9 +30,9 @@ private:
     // o se pasará en funciones que requieran hashing.
     // La versión anterior tenía un placeholder para SHA256 directo sin RXContext
     // lo que causó algunos de los errores.
-    static RandomXHash hashPair(const RandomXHash& hash1, const RandomXHash& hash2, Radix::RandomXContext& rxContext);
+    static RandomXHash hashPair(const RandomXHash& hash1, const RandomXHash& hash2, Soverx::RandomXContext& rxContext);
 };
 
-} // namespace Radix
+} // namespace Soverx
 
 #endif // MERKLE_TREE_H

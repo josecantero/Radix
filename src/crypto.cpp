@@ -20,7 +20,7 @@
 #include <openssl/param_build.h> // Para OSSL_PARAM_BLD_*
 #include <openssl/provider.h> // Para OSSL_PROVIDER_load
 
-namespace Radix {
+namespace Soverx {
 
 // --------------------------------------------------------------------------------
 // Funciones de Utilidad Criptográficas (fuera de la clase KeyPair)
@@ -29,8 +29,8 @@ namespace Radix {
 // Calculates SHA256(RIPEMD160(data)) - known as Hash160
 // Migrated to EVP_MD_CTX to eliminate RIPEMD160 warning.
 std::vector<uint8_t> hash160(const std::vector<uint8_t>& data) {
-    // Usa Radix::SHA256 para obtener el hash
-    Radix::RandomXHash sha256_hash = Radix::SHA256(data); // Usa la función SHA256 definida a continuación
+    // Usa Soverx::SHA256 para obtener el hash
+    Soverx::RandomXHash sha256_hash = Soverx::SHA256(data); // Usa la función SHA256 definida a continuación
 
     // Usa EVP_MD_CTX para RIPEMD160
     unsigned char ripemd160_digest[RIPEMD160_DIGEST_LENGTH]; // RIPEMD160_DIGEST_LENGTH is 20 bytes
@@ -161,15 +161,15 @@ std::vector<uint8_t> base58Decode(const std::string& data) {
 }
 
 // Implementación de los wrappers SHA256
-Radix::RandomXHash SHA256(const std::string& data) {
-    Radix::RandomXHash hash_result;
+Soverx::RandomXHash SHA256(const std::string& data) {
+    Soverx::RandomXHash hash_result;
     // Usar la función SHA256 global de OpenSSL
     ::SHA256(reinterpret_cast<const unsigned char*>(data.data()), data.size(), hash_result.data());
     return hash_result;
 }
 
-Radix::RandomXHash SHA256(const std::vector<uint8_t>& data) {
-    Radix::RandomXHash hash_result;
+Soverx::RandomXHash SHA256(const std::vector<uint8_t>& data) {
+    Soverx::RandomXHash hash_result;
     // Usar la función SHA256 global de OpenSSL
     ::SHA256(data.data(), data.size(), hash_result.data());
     return hash_result;
@@ -348,13 +348,13 @@ void KeyPair::deriveAddressInternal() {
     address_bytes_with_version.push_back(0x00); 
     address_bytes_with_version.insert(address_bytes_with_version.end(), pubKeyHash.begin(), pubKeyHash.end());
 
-    // Usa Radix::SHA256 para los checksums
-    Radix::RandomXHash checksum_hash1 = Radix::SHA256(address_bytes_with_version);
-    Radix::RandomXHash checksum_hash2 = Radix::SHA256(std::vector<uint8_t>(checksum_hash1.begin(), checksum_hash1.end()));
+    // Usa Soverx::SHA256 para los checksums
+    Soverx::RandomXHash checksum_hash1 = Soverx::SHA256(address_bytes_with_version);
+    Soverx::RandomXHash checksum_hash2 = Soverx::SHA256(std::vector<uint8_t>(checksum_hash1.begin(), checksum_hash1.end()));
 
     address_bytes_with_version.insert(address_bytes_with_version.end(), checksum_hash2.begin(), checksum_hash2.begin() + 4);
 
-    address = "R" + base58Encode(address_bytes_with_version); 
+    address = "svx_" + base58Encode(address_bytes_with_version); 
 }
 
 // Migrated to EVP_DigestSign* for signing, eliminating warnings.
@@ -548,13 +548,13 @@ Address KeyPair::deriveAddress(const PublicKey& pubKey) {
     address_bytes_with_version.push_back(0x00); 
     address_bytes_with_version.insert(address_bytes_with_version.end(), pubKeyHash.begin(), pubKeyHash.end());
 
-    // Usa Radix::SHA256 para los checksums
-    Radix::RandomXHash checksum_hash1 = Radix::SHA256(address_bytes_with_version);
-    Radix::RandomXHash checksum_hash2 = Radix::SHA256(std::vector<uint8_t>(checksum_hash1.begin(), checksum_hash1.end()));
+    // Usa Soverx::SHA256 para los checksums
+    Soverx::RandomXHash checksum_hash1 = Soverx::SHA256(address_bytes_with_version);
+    Soverx::RandomXHash checksum_hash2 = Soverx::SHA256(std::vector<uint8_t>(checksum_hash1.begin(), checksum_hash1.end()));
 
     address_bytes_with_version.insert(address_bytes_with_version.end(), checksum_hash2.begin(), checksum_hash2.begin() + 4);
 
-    return "R" + base58Encode(address_bytes_with_version); 
+    return "svx_" + base58Encode(address_bytes_with_version); 
 }
 
-} // namespace Radix
+} // namespace Soverx

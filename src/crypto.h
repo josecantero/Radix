@@ -13,7 +13,7 @@
 #include <openssl/ec.h>     // Para EC_KEY, EC_GROUP, EC_POINT
 #include <openssl/ecdsa.h>  // Para ECDSA_SIG
 
-namespace Radix {
+namespace Soverx {
 
 // Tipos personalizados para mayor claridad
 using PrivateKey = std::array<uint8_t, 32>; // Clave privada de 32 bytes
@@ -25,7 +25,7 @@ std::vector<uint8_t> hash160(const std::vector<uint8_t>& data);
 std::string base58Encode(const std::vector<uint8_t>& data);
 std::vector<uint8_t> base58Decode(const std::string& data);
 
-// Wrapper para SHA256 (global de OpenSSL) en el namespace Radix
+// Wrapper para SHA256 (global de OpenSSL) en el namespace Soverx
 RandomXHash SHA256(const std::string& data);
 RandomXHash SHA256(const std::vector<uint8_t>& data);
 
@@ -63,6 +63,6 @@ private:
     void deriveAddressInternal();
 };
 
-} // namespace Radix
+} // namespace Soverx
 
 #endif // CRYPTO_H

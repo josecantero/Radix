@@ -4,7 +4,7 @@
 #include <stdexcept> // For std::runtime_error
 #include <vector>
 
-namespace Radix {
+namespace Soverx {
 namespace Base58 {
 
 // El alfabeto Base58 (Bitcoin usa este)
@@ -118,4 +118,4 @@ std::vector<unsigned char> decode(const std::string& data) {
 }
 
 } // namespace Base58
-} // namespace Radix
+} // namespace Soverx

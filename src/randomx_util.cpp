@@ -6,7 +6,7 @@
 #include <vector>        // For std::vector
 #include <cstring>       // For memcpy if necessary
 
-namespace Radix {
+namespace Soverx {
 
 RandomXContext::RandomXContext() : flags(RANDOMX_FLAG_DEFAULT), vm(nullptr), cache(nullptr), dataset(nullptr) {
     // Determine the optimal flags for the current CPU
@@ -26,7 +26,7 @@ RandomXContext::RandomXContext() : flags(RANDOMX_FLAG_DEFAULT), vm(nullptr), cac
     }
 
     // Initialize cache with a default seed to satisfy randomx_create_vm requirement
-    std::string defaultSeed = "radix_genesis_seed";
+    std::string defaultSeed = "svx_genesis_seed";
     randomx_init_cache(cache, defaultSeed.data(), defaultSeed.size());
 
     // Allocate the VM (virtual machine)
@@ -132,4 +132,4 @@ void fromHexString(const std::string& hexString, std::vector<uint8_t>& bytes) {
     }
 }
 
-} // namespace Radix
+} // namespace Soverx

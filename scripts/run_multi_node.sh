@@ -1,15 +1,15 @@
 #!/bin/bash
-# Multi-node local testing script for Radix Blockchain
+# Multi-node local testing script for Soverx Blockchain
 # Starts 3 nodes locally for testing without Docker
 
 set -e
 
-echo "🚀 Starting Radix Multi-Node Test Setup"
+echo "🚀 Starting Soverx Multi-Node Test Setup"
 echo "========================================"
 
 # Check if binary exists
-if [ ! -f "./build/radix_blockchain" ]; then
-    echo "❌ Error: radix_blockchain not found. Run 'cd build && make' first."
+if [ ! -f "./build/soverx_node" ]; then
+    echo "❌ Error: soverx_node not found. Run 'cd build && make' first."
     exit 1
 fi
 
@@ -20,7 +20,7 @@ mkdir -p configs_local
 cat > configs_local/node1.json << EOF
 {
   "network": {"port": 8080, "connect_peer": ""},
-  "mining": {"enabled": true, "miner_address": "radix_node1_miner"},
+  "mining": {"enabled": true, "miner_address": "svx_node1_miner"},
   "rpc": {"enabled": true, "port": 8090},
   "blockchain": {"data_dir": "./data_node1", "difficulty": 1}
 }
@@ -30,7 +30,7 @@ EOF
 cat > configs_local/node2.json << EOF
 {
   "network": {"port": 8081, "connect_peer": "127.0.0.1:8080"},
-  "mining": {"enabled": false, "miner_address": "radix_node2"},
+  "mining": {"enabled": false, "miner_address": "svx_node2"},
   "rpc": {"enabled": true, "port": 8091},
   "blockchain": {"data_dir": "./data_node2", "difficulty": 1}
 }
@@ -40,7 +40,7 @@ EOF
 cat > configs_local/node3.json << EOF
 {
   "network": {"port": 8082, "connect_peer": "127.0.0.1:8080"},
-  "mining": {"enabled": false, "miner_address": "radix_node3"},
+  "mining": {"enabled": false, "miner_address": "svx_node3"},
   "rpc": {"enabled": true, "port": 8092},
   "blockchain": {"data_dir": "./data_node3", "difficulty": 1}
 }
@@ -51,21 +51,21 @@ mkdir -p data_node1 data_node2 data_node3
 
 echo ""
 echo "📡 Starting Node 1 (Bootstrap Miner) on port 8080..."
-./build/radix_blockchain --config configs_local/node1.json > node1.log 2>&1 &
+./build/soverx_node --config configs_local/node1.json > node1.log 2>&1 &
 NODE1_PID=$!
 echo "   PID: $NODE1_PID"
 
 sleep 3
 
 echo "📡 Starting Node 2 (Peer) on port 8081..."
-./build/radix_blockchain --config configs_local/node2.json > node2.log 2>&1 &
+./build/soverx_node --config configs_local/node2.json > node2.log 2>&1 &
 NODE2_PID=$!
 echo "   PID: $NODE2_PID"
 
 sleep 2
 
 echo "📡 Starting Node 3 (Peer) on port 8082..."
-./build/radix_blockchain --config configs_local/node3.json > node3.log 2>&1 &
+./build/soverx_node --config configs_local/node3.json > node3.log 2>&1 &
 NODE3_PID=$!
 echo "   PID: $NODE3_PID"
 

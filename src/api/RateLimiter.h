@@ -1,11 +1,11 @@
-#ifndef RADIX_RATE_LIMITER_H
-#define RADIX_RATE_LIMITER_H
+#ifndef SOVERX_RATE_LIMITER_H
+#define SOVERX_RATE_LIMITER_H
 
 #include <deque>
 #include <mutex>
 #include <cstdint>
 
-namespace Radix {
+namespace Soverx {
 
 /**
  * @brief Rate limiter using sliding window algorithm
@@ -62,6 +62,6 @@ private:
     static uint64_t getCurrentTimeMs();
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_RATE_LIMITER_H
+#endif // SOVERX_RATE_LIMITER_H

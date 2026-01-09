@@ -2,7 +2,7 @@
 #include <chrono>
 #include <algorithm>
 
-namespace Radix {
+namespace Soverx {
 
 RateLimiter::RateLimiter(int requestsPerMinute) : limit(requestsPerMinute) {}
 
@@ -55,4 +55,4 @@ uint64_t RateLimiter::getCurrentTimeMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
-} // namespace Radix
+} // namespace Soverx

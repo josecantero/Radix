@@ -1,6 +1,6 @@
 // block.h
-#ifndef BLOCK_H
-#define BLOCK_H
+#ifndef SOVERX_BLOCK_H
+#define SOVERX_BLOCK_H
 
 #include <string>
 #include <vector>
@@ -13,7 +13,7 @@
 #include "transaction.h"
 #include "randomx_util.h" // Para la declaración de RandomXContext
 
-namespace Radix {
+namespace Soverx {
 
 // Declaración anticipada de las clases y utilidades de persistencia
 namespace Persistence {
@@ -75,6 +75,6 @@ private:
     std::string buildMerkleTree(const std::vector<std::string>& hashes) const;
 };
 
-} // namespace Radix
+} // namespace Soverx
 
 #endif // BLOCK_H

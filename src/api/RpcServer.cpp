@@ -13,7 +13,7 @@
 #include <cstring>
 #include <algorithm>
 
-namespace Radix {
+namespace Soverx {
 
 RpcServer::RpcServer(Blockchain& blockchain, Node& node) 
     : blockchain(blockchain), node(node), running(false) {}
@@ -387,4 +387,4 @@ std::vector<std::string> RpcServer::parseJsonArray(const std::string& json, cons
     return result;
 }
 
-} // namespace Radix
+} // namespace Soverx

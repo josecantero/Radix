@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-namespace Radix {
+namespace Soverx {
 namespace Persistence {
 
 // Escribir tipos primitivos
@@ -49,6 +49,6 @@ std::vector<uint8_t> readVector(std::istream& fs);
 
 
 } // namespace Persistence
-} // namespace Radix
+} // namespace Soverx
 
 #endif // PERSISTENCE_UTIL_H

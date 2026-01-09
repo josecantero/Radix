@@ -1,11 +1,11 @@
-#ifndef RADIX_PEER_H
-#define RADIX_PEER_H
+#ifndef SOVERX_PEER_H
+#define SOVERX_PEER_H
 
 #include <string>
 #include <netinet/in.h>
 #include "Message.h"
 
-namespace Radix {
+namespace Soverx {
 
 class Peer {
 public:
@@ -38,6 +38,6 @@ private:
     bool readAll(void* data, size_t length);
 };
 
-} // namespace Radix
+} // namespace Soverx
 
-#endif // RADIX_PEER_H
+#endif // SOVERX_PEER_H

@@ -12,7 +12,7 @@
 #include "transaction.h"  // Incluir la definición de Transaction
 #include "randomx_util.h" // Incluir RandomXContext
 
-namespace Radix {
+namespace Soverx {
 
 // Define el intervalo de bloques para el halving (para demostración, un número pequeño)
 // En Bitcoin, esto es 210,000 bloques.
@@ -22,11 +22,11 @@ class Blockchain {
 public:
     // Constructor de la Blockchain
     // Se requiere la dificultad al inicializar
-    Blockchain(unsigned int difficulty, Radix::RandomXContext& rxContext_ref);
+    Blockchain(unsigned int difficulty, Soverx::RandomXContext& rxContext_ref);
 
     // Añade una transacción a las transacciones pendientes
     // Ahora valida la transacción contra el UTXOSet actual
-    bool addTransaction(const Radix::Transaction& transaction);
+    bool addTransaction(const Soverx::Transaction& transaction);
 
     // Enum for block submission result
     enum class BlockStatus {
@@ -98,7 +98,7 @@ private:
     std::vector<Transaction> pendingTransactions;
     unsigned int difficulty;
     uint64_t currentMiningReward; // Recompensa de minería actual (para el halving)
-    Radix::RandomXContext& rxContext_; // Referencia al contexto RandomX
+    Soverx::RandomXContext& rxContext_; // Referencia al contexto RandomX
     std::map<std::string, TransactionOutput> utxoSet; // Conjunto de UTXO globales
 
     // Crea el bloque génesis
@@ -109,6 +109,6 @@ private:
     void rebuildUtxoSet();
 };
 
-} // namespace Radix
+} // namespace Soverx
 
 #endif // BLOCKCHAIN_H
